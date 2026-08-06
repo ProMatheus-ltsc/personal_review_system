@@ -94,6 +94,13 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const [loadedFromPrevWeek, setLoadedFromPrevWeek] = useState(false);
   /** 待确认的只读（已锁定过去阶段）section 索引，null 表示未弹窗 */
   const [readonlyConfirmSection, setReadonlyConfirmSection] = useState<number | null>(null);
+  /**
+   * 用户实际进入过的最高阶段索引。
+   * currentPhaseIndex 会在字段填满时自动推进（用于解锁下一阶段），
+   * 但只有用户真正进入下一阶段后，之前的阶段才锁定——
+   * 避免「买入前」刚填完必填项就被置灰锁定的自动完成错觉。
+   */
+  const [visitedMaxPhase, setVisitedMaxPhase] = useState(0);
   const { toast, showToast, hideToast } = useToast();
   const { save } = useSaveRecord();
   const currentRecordId = useRef(recordId || uuidv4());
@@ -295,6 +302,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       if (firstSectionIdx !== undefined && firstSectionIdx > 0) {
         setActiveTab(firstSectionIdx);
       }
+      // 编辑已有记录时，直接以当前阶段作为已进入的最高阶段（之前的阶段锁定）
+      setVisitedMaxPhase(currentPhaseIndex);
       setInitialTabSet(true);
     } else if (!initialTabSet) {
       setInitialTabSet(true);
@@ -409,21 +418,21 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // 判断 section 是否为只读：
   // - 无阶段模板：已完成记录整体只读
   // - 多阶段模板：
-  //   1) 当前阶段之前的阶段（已完成锁定）只读，只能查看不能修改
+  //   1) 用户已实际进入过的更高阶段 → 之前的阶段锁定（只能查看不能修改）
   //   2) 记录标记完成后，completesRecord 阶段（决策后/卖出）及之前的阶段
   //      全部锁定，不能再修改（复盘阶段解锁后仍可填写）
   const isSectionReadOnly = useCallback(
     (sectionIndex: number): boolean => {
       if (!phases) return recordStatus === 'completed';
       const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
-      if (sectionPhaseIdx < currentPhaseIndex) return true;
+      if (sectionPhaseIdx < visitedMaxPhase) return true;
       if (recordStatus === 'completed') {
         const completesIdx = phases.findIndex((p) => p.completesRecord);
         if (completesIdx >= 0 && sectionPhaseIdx <= completesIdx) return true;
       }
       return false;
     },
-    [phases, recordStatus, currentPhaseIndex]
+    [phases, recordStatus, visitedMaxPhase]
   );
 
   // Save on tab switch
@@ -437,10 +446,15 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         setReadonlyConfirmSection(index);
         return;
       }
+      // 进入更高阶段后，之前的阶段才锁定
+      if (phases) {
+        const targetPhase = getSectionPhaseIndex(phases, index);
+        if (targetPhase > visitedMaxPhase) setVisitedMaxPhase(targetPhase);
+      }
       performSave('draft');
       setActiveTab(index);
     },
-    [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab]
+    [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab, visitedMaxPhase]
   );
 
   // Handle phase click - navigate to the first section of the selected phase
@@ -457,10 +471,12 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         setReadonlyConfirmSection(firstSectionIdx);
         return;
       }
+      // 进入更高阶段后，之前的阶段才锁定
+      if (phaseIndex > visitedMaxPhase) setVisitedMaxPhase(phaseIndex);
       performSave('draft');
       setActiveTab(firstSectionIdx);
     },
-    [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab]
+    [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase]
   );
 
   const handleDraftSave = async () => {
