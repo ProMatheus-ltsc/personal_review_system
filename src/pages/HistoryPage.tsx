@@ -21,9 +21,11 @@ import { useRecords, useDeleteRecord, useDeleteRecords } from '@/hooks/useDB';
 import clsx from 'clsx';
 import SearchBar from '@/components/SearchBar';
 import HistoryList from '@/components/HistoryList';
+import InvestmentTable from '@/components/InvestmentTable';
 
 type SortOrder = 'newest' | 'oldest';
 type StatusFilter = 'all' | 'draft' | 'completed';
+type ViewMode = 'list' | 'table';
 
 export default function HistoryPage() {
   const { templateId: urlTemplateId } = useParams<{ templateId?: string }>();
@@ -35,6 +37,7 @@ export default function HistoryPage() {
   );
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   const { records, loading, refresh } = useRecords();
   const { remove } = useDeleteRecord();
@@ -143,21 +146,21 @@ export default function HistoryPage() {
         <h1 className="text-2xl font-bold text-gray-900 flex-1">
           {activeTemplate ? `${activeTemplate.name} 记录` : '历史记录'}
         </h1>
-        {!selectionMode ? (
+        {!selectionMode && !(viewMode === 'table' && activeTemplateId === 'investment_checklist') ? (
           <button
             onClick={enterSelectionMode}
             className="px-3 py-1.5 text-sm font-medium rounded-lg border text-gray-600 hover:bg-gray-50 transition-colors"
           >
             管理
           </button>
-        ) : (
+        ) : selectionMode ? (
           <button
             onClick={exitSelectionMode}
             className="px-3 py-1.5 text-sm font-medium rounded-lg border text-gray-600 hover:bg-gray-50 transition-colors"
           >
             取消
           </button>
-        )}
+        ) : null}
       </div>
 
       {/* Filters */}
@@ -245,19 +248,48 @@ export default function HistoryPage() {
                 </button>
               ))}
             </div>
+
+            {/* 投资记录视图切换（列表 / 表格） */}
+            {activeTemplateId === 'investment_checklist' && (
+              <div className="flex rounded-lg border overflow-hidden">
+                {(
+                  [
+                    { key: 'list', label: '列表' },
+                    { key: 'table', label: '表格' },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setViewMode(item.key)}
+                    className={clsx(
+                      'px-3 py-1.5 text-sm font-medium transition-colors',
+                      viewMode === item.key
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
         </div>
       </div>
 
       {/* Record list */}
-      <HistoryList
-        records={filteredRecords}
-        onSelect={handleSelect}
-        onDelete={handleDelete}
-        loading={loading}
-        selectionMode={selectionMode}
-        selectedIds={selectedIds}
-        onToggleSelect={toggleSelect}
-      />
+      {viewMode === 'table' && activeTemplateId === 'investment_checklist' ? (
+        <InvestmentTable records={filteredRecords} onSelect={handleSelect} />
+      ) : (
+        <HistoryList
+          records={filteredRecords}
+          onSelect={handleSelect}
+          onDelete={handleDelete}
+          loading={loading}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+        />
+      )}
 
       {/* 批量操作栏 */}
       {selectionMode && (

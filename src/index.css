@@ -7,6 +7,14 @@
     @apply bg-gray-50 text-gray-900 antialiased;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   }
+
+  /* fieldset 默认样式重置，避免影响表单布局 */
+  fieldset {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+  }
   
   /* Prevent iOS zoom on input focus */
   input, select, textarea {
@@ -20,6 +28,22 @@
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg 
            focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 
            transition-colors duration-200 bg-white;
+  }
+
+  /* 只读表单区域（fieldset disabled）：所有控件置灰，禁止修改 */
+  fieldset[disabled] input,
+  fieldset[disabled] textarea,
+  fieldset[disabled] select {
+    background-color: #f3f4f6;
+    color: #6b7280;
+    cursor: not-allowed;
+  }
+  fieldset[disabled] button {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  fieldset[disabled] label {
+    cursor: not-allowed;
   }
   
   .form-label {

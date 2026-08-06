@@ -45,7 +45,7 @@ export interface DecisionLogStats {
   regretRate: number | null;
   /** 预期准确率（result_vs_expected 为"超预期"或"符合预期"的占比） */
   predictionAccuracy: number | null;
-  /** 主要认知偏差类型（top 3） */
+  /** 已确认排除的认知偏见（勾选=确认无此偏见，top 3） */
   topBiases: { name: string; count: number }[];
   /** 改进焦点（最近一条记录的 improvement_plan） */
   improvementFocus: string | null;

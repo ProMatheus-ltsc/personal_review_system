@@ -3,3 +3,4 @@ export { default as ReviewReminder } from './ReviewReminder';
 export type { ReviewItem } from './ReviewReminder';
 export { default as BackupReminder } from './BackupReminder';
 export { default as RecentRecords } from './RecentRecords';
+export { default as ContributionGraph } from './ContributionGraph';

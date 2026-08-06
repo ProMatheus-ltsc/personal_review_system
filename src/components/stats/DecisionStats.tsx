@@ -66,17 +66,17 @@ export default function DecisionStats({ timeRange }: Props) {
           color={stats.predictionAccuracy !== null && stats.predictionAccuracy >= 60 ? 'green' : 'yellow'}
         />
         <StatCard
-          label="已识别偏差"
+          label="已排除偏差"
           value={stats.topBiases.length > 0 ? stats.topBiases.length : '-'}
-          subtext="认知偏差类型数"
+          subtext="确认无此偏差的类型数"
           color="purple"
         />
       </div>
 
-      {/* 认知偏差 Top 3 */}
+      {/* 认知偏见 Top 3 */}
       {stats.topBiases.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">🧠 主要认知偏差</h4>
+          <h4 className="text-sm font-medium text-gray-700 mb-3">🧠 已确认排除的认知偏见</h4>
           <div className="space-y-2">
             {stats.topBiases.map((bias, i) => (
               <div key={bias.name} className="flex items-center gap-2">
@@ -88,6 +88,7 @@ export default function DecisionStats({ timeRange }: Props) {
               </div>
             ))}
           </div>
+          <p className="text-xs text-gray-400 mt-2">勾选 = 确认该次决策未受此偏见影响</p>
         </div>
       )}
 

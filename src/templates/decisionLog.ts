@@ -100,11 +100,11 @@ export const decisionLogTemplate: FormTemplate = {
           { value: '高', label: '高' }, { value: '中', label: '中' }, { value: '低', label: '低' },
         ]},
         { id: 'missing_info', label: '缺失信息', type: 'textarea', placeholder: '还缺少哪些重要信息？', priority: 'optional' },
-        // 认知偏见
-        { id: 'cognitive_biases', label: '认知偏见检查', type: 'checkbox', priority: 'recommended', hint: '常见偏差：确认偏见（只找支持自己的证据）、沉没成本（因已投入而不愿放弃）、锚定效应（被第一个数字锚定）、过度自信（高估自己的判断）', options: [
-          { value: '确认偏见', label: '确认偏见' }, { value: '锚定效应', label: '锚定效应' },
-          { value: '沉没成本', label: '沉没成本' }, { value: '过度自信', label: '过度自信' },
-          { value: '损失厌恶', label: '损失厌恶' }, { value: '其他', label: '其他' },
+        // 认知偏见检查（勾选 = 确认未受该偏见影响）
+        { id: 'cognitive_biases', label: '认知偏见检查', type: 'checkbox', priority: 'recommended', hint: '逐项确认本次决策未受该偏见影响（勾选 = 确认没有）。常见偏差：确认偏见（只找支持自己的证据）、锚定效应（被第一个数字锚定）、沉没成本（因已投入而不愿放弃）、过度自信（高估自己的判断）、损失厌恶（对损失更敏感）', options: [
+          { value: '确认偏见', label: '已确认无「确认偏见」' }, { value: '锚定效应', label: '已确认无「锚定效应」' },
+          { value: '沉没成本', label: '已确认无「沉没成本」' }, { value: '过度自信', label: '已确认无「过度自信」' },
+          { value: '损失厌恶', label: '已确认无「损失厌恶」' },
         ]},
         // 情绪状态
         { id: 'current_emotion', label: '当前情绪', type: 'radio', priority: 'recommended', options: [

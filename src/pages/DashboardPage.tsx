@@ -19,7 +19,7 @@ import TemplateCard from '@/components/TemplateCard';
 import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
 import { isFieldEmpty } from '@/utils/formValidation';
-import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, type ReviewItem } from '@/components/dashboard';
+import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, type ReviewItem } from '@/components/dashboard';
 
 /**
  * DashboardPage — 首页仪表盘
@@ -204,6 +204,9 @@ export default function DashboardPage() {
       />
 
       <HabitStats streak={streak} weekCount={weekCount} monthCount={monthCount} />
+
+      {/* GitHub 风格复盘热力图 */}
+      <ContributionGraph records={records} />
 
       {/* 1B: Quick Tips / Frequency Guide */}
       <div className="mb-6">

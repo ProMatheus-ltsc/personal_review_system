@@ -28,6 +28,7 @@ import PhaseIndicator from './PhaseIndicator';
 import Toast from './Toast';
 import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
+import ConfirmDialog from './ConfirmDialog';
 
 /**
  * 解析模板字段中的 magic string defaultValue 为实际值
@@ -91,6 +92,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const [initialTabSet, setInitialTabSet] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [loadedFromPrevWeek, setLoadedFromPrevWeek] = useState(false);
+  /** 待确认的只读（已锁定过去阶段）section 索引，null 表示未弹窗 */
+  const [readonlyConfirmSection, setReadonlyConfirmSection] = useState<number | null>(null);
   const { toast, showToast, hideToast } = useToast();
   const { save } = useSaveRecord();
   const currentRecordId = useRef(recordId || uuidv4());
@@ -372,8 +375,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     [buildRecord, save, recordStatus, getValues, setValue]
   );
 
-  // Auto-save every 30 seconds
+  // Auto-save every 30 seconds (skip fully read-only completed records)
   useEffect(() => {
+    if (recordStatus === 'completed' && !phases) return;
     autoSaveRef.current = setInterval(() => {
       performSave('draft');
     }, 30000);
@@ -383,7 +387,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         clearInterval(autoSaveRef.current);
       }
     };
-  }, [performSave]);
+  }, [performSave, recordStatus, phases]);
 
   // Check if a section belongs to a locked (future) phase
   const isSectionLocked = useCallback(
@@ -395,15 +399,33 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     [phases, currentPhaseIndex]
   );
 
+  // 判断 section 是否为只读：
+  // - 无阶段模板：已完成记录整体只读
+  // - 多阶段模板：当前阶段之前的阶段（已完成锁定）只读，只能查看不能修改
+  const isSectionReadOnly = useCallback(
+    (sectionIndex: number): boolean => {
+      if (!phases) return recordStatus === 'completed';
+      const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
+      return sectionPhaseIdx < currentPhaseIndex;
+    },
+    [phases, recordStatus, currentPhaseIndex]
+  );
+
   // Save on tab switch
   const handleTabChange = useCallback(
     (index: number) => {
       // Prevent navigating to a locked section
       if (isSectionLocked(index)) return;
+      // 回看多阶段模板中已完成的过去阶段：需确认只读查看
+      // （已处于只读阶段内切换则无需重复确认）
+      if (phases && isSectionReadOnly(index) && !isSectionReadOnly(activeTab)) {
+        setReadonlyConfirmSection(index);
+        return;
+      }
       performSave('draft');
       setActiveTab(index);
     },
-    [performSave, isSectionLocked]
+    [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab]
   );
 
   // Handle phase click - navigate to the first section of the selected phase
@@ -413,12 +435,16 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       // Don't navigate to locked phases
       if (phaseIndex > currentPhaseIndex) return;
       const firstSectionIdx = phases[phaseIndex]?.sectionIndices[0];
-      if (firstSectionIdx !== undefined) {
-        performSave('draft');
-        setActiveTab(firstSectionIdx);
+      if (firstSectionIdx === undefined) return;
+      // 回看已完成的过去阶段：需确认只读查看（已处于只读阶段则无需重复确认）
+      if (phaseIndex < currentPhaseIndex && !isSectionReadOnly(activeTab)) {
+        setReadonlyConfirmSection(firstSectionIdx);
+        return;
       }
+      performSave('draft');
+      setActiveTab(firstSectionIdx);
     },
-    [phases, performSave, currentPhaseIndex]
+    [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab]
   );
 
   const handleDraftSave = async () => {
@@ -682,6 +708,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           {template.sections.map((section, index) => {
             const hasErrors = sectionsWithErrors.has(index);
             const locked = isSectionLocked(index);
+            const readOnly = isSectionReadOnly(index);
             return (
               <button
                 key={section.id}
@@ -706,7 +733,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                {locked && <span className="mr-1">🔒</span>}
+                {(locked || readOnly) && <span className="mr-1">🔒</span>}
                 {section.title}
                 {hasErrors && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
               </button>
@@ -793,7 +820,22 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
         {/* Only render form fields if the section is NOT locked */}
         {!isSectionLocked(activeTab) && (
-          <>
+          <fieldset disabled={isSectionReadOnly(activeTab)} className="min-w-0 border-0 p-0 m-0">
+            {/* Read-only banner */}
+            {isSectionReadOnly(activeTab) && (
+              <div
+                className={`text-sm p-3 rounded-lg mb-4 border ${
+                  recordStatus === 'completed' && !phases
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-amber-50 border-amber-200 text-amber-700'
+                }`}
+              >
+                {recordStatus === 'completed' && !phases
+                  ? '✅ 此记录已完成，内容为只读，不能修改'
+                  : `🔒 「${activeSection.title}」阶段已完成并锁定，只能查看，无法修改`}
+              </div>
+            )}
+
             {activeSection.repeatable ? (
               <div>
                 <RepeatableSection
@@ -826,7 +868,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                 </OptionalFieldsGroup>
               </CollapsibleSection>
             )}
-          </>
+          </fieldset>
         )}
 
         {/* Navigation buttons */}
@@ -848,12 +890,26 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             <button
               type="button"
               onClick={handleDraftSave}
-              className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              disabled={isSectionReadOnly(activeTab)}
+              className={`w-full sm:w-auto px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg transition ${
+                isSectionReadOnly(activeTab)
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
             >
               保存草稿
             </button>
 
-            {activeTab === template.sections.length - 1 ? (
+            {recordStatus === 'completed' && !phases ? (
+              // 无阶段模板：记录已完成，整体只读
+              <button
+                type="button"
+                disabled
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
+              >
+                ✅ 已完成
+              </button>
+            ) : activeTab === template.sections.length - 1 ? (
               <button
                 type="button"
                 onClick={handleComplete}
@@ -897,6 +953,31 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           </div>
         </div>
       </form>
+
+      {/* 回看已锁定过去阶段的确认弹窗 */}
+      <ConfirmDialog
+        isOpen={readonlyConfirmSection !== null}
+        title="该阶段已锁定"
+        message={
+          readonlyConfirmSection !== null ? (
+            <>
+              「{template.sections[readonlyConfirmSection].title}」阶段已完成并锁定，
+              进入后<strong>只能查看，无法修改</strong>。确认只查看、不做任何修改吗？
+            </>
+          ) : (
+            ''
+          )
+        }
+        confirmText="仅查看"
+        cancelText="取消"
+        onConfirm={() => {
+          if (readonlyConfirmSection !== null) {
+            setActiveTab(readonlyConfirmSection);
+            setReadonlyConfirmSection(null);
+          }
+        }}
+        onCancel={() => setReadonlyConfirmSection(null)}
+      />
     </div>
   );
 };
