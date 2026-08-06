@@ -18,7 +18,8 @@ import { zhCN } from 'date-fns/locale';
 import TemplateCard from '@/components/TemplateCard';
 import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
-import { HabitStats, ReviewReminder, BackupReminder, RecentRecords } from '@/components/dashboard';
+import { isFieldEmpty } from '@/utils/formValidation';
+import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, type ReviewItem } from '@/components/dashboard';
 
 /**
  * DashboardPage — 首页仪表盘
@@ -123,32 +124,57 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [records]);
 
-  // Review reminder: investment records that are sold but not yet reviewed
+  // 复盘提醒：投资检查清单按卖出日期、决策日志按完成时间，过 30 天冷静期后提醒复盘
   const { readyForReview, pendingReview } = useMemo(() => {
-    const investmentRecords = records.filter(
-      (r) => r.templateId === 'investment_checklist'
-    );
-    const ready: typeof records = [];
-    const pending: typeof records = [];
+    const COOLDOWN_DAYS = 30;
+    const ready: ReviewItem[] = [];
+    const pending: ReviewItem[] = [];
 
-    investmentRecords.forEach((record) => {
-      const sellDate = record.data.sell_date as string | undefined;
-      const sellLesson = record.data.sell_lesson as string | undefined;
-      if (!sellDate || String(sellDate).trim() === '') return;
-      if (sellLesson && String(sellLesson).trim() !== '') return; // already reviewed
+    records.forEach((record) => {
+      if (record.templateId === 'investment_checklist') {
+        const sellDate = record.data.sell_date as string | undefined;
+        if (!sellDate || String(sellDate).trim() === '') return;
+        // 已复盘？卖出复盘为可重复段，检查是否已有含核心教训的记录
+        const reviewEntries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
+        const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
+        if (reviewed) return;
 
-      const parsed = new Date(String(sellDate));
-      if (isNaN(parsed.getTime())) return;
+        const parsed = new Date(String(sellDate));
+        if (isNaN(parsed.getTime())) return;
+        const daysSince = Math.floor(
+          (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        const item: ReviewItem = {
+          id: record.id,
+          templateId: 'investment_checklist',
+          title: (record.data.buy_company_name as string) || '未命名标的',
+          dateLabel: `卖出于 ${String(sellDate)}`,
+          link: `/form/investment_checklist/${record.id}`,
+        };
+        if (daysSince >= COOLDOWN_DAYS) ready.push(item);
+        else pending.push(item);
+      } else if (record.templateId === 'decision_log' && record.status === 'completed') {
+        const completedAt = (record.data._completedAt as string) || record.createdAt.slice(0, 10);
+        if (!completedAt || String(completedAt).trim() === '') return;
+        // 已复盘？长期复盘为可重复段，检查是否已有「结果对比预期」的记录
+        const reviewEntries = record.data.long_term_review_entries as Record<string, unknown>[] | undefined;
+        const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.result_vs_expected));
+        if (reviewed) return;
 
-      const today = new Date();
-      const daysSinceSell = Math.floor(
-        (today.getTime() - parsed.getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      if (daysSinceSell >= 30) {
-        ready.push(record);
-      } else {
-        pending.push(record);
+        const parsed = new Date(String(completedAt));
+        if (isNaN(parsed.getTime())) return;
+        const daysSince = Math.floor(
+          (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        const item: ReviewItem = {
+          id: record.id,
+          templateId: 'decision_log',
+          title: (record.data.title as string) || '未命名决策',
+          dateLabel: `完成于 ${String(completedAt)}`,
+          link: `/form/decision_log/${record.id}`,
+        };
+        if (daysSince >= COOLDOWN_DAYS) ready.push(item);
+        else pending.push(item);
       }
     });
 

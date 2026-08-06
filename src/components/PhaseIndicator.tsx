@@ -48,7 +48,7 @@ const PhaseIndicator: React.FC<PhaseIndicatorProps> = ({
               if (lockInfo.unlockDate.getFullYear() < 9000) {
                 timeLockLabel = `${lockInfo.daysRemaining}天后解锁`;
               } else {
-                timeLockLabel = `${phase.unlockAfterDays}天后`;
+                timeLockLabel = '待定';
               }
             }
           }

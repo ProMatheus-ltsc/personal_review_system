@@ -135,6 +135,11 @@ export function getCurrentPhaseIndex(phases: PhaseConfig[], formData: Record<str
           if (!isNaN(parsed.getTime())) referenceDate = parsed;
         }
       }
+      // 配置了参考字段但尚未填写（如决策日志完成前 _completedAt 不存在）时，
+      // 不回退到 createdAt，保持该阶段锁定，避免未完成记录提前解锁
+      if (!referenceDate && nextPhase.unlockAfterField) {
+        return i;
+      }
       // Fallback to record createdAt
       if (!referenceDate && recordCreatedAt) {
         const parsed = new Date(recordCreatedAt);
@@ -192,6 +197,10 @@ export function getPhaseTimeLockInfo(
       const parsed = new Date(String(fieldValue));
       if (!isNaN(parsed.getTime())) referenceDate = parsed;
     }
+  }
+  // 配置了参考字段但尚未填写 → 视为无限期锁定（解锁日期未知）
+  if (!referenceDate && phase.unlockAfterField) {
+    return { unlockDate: new Date(9999, 0, 1), daysRemaining: unlockDays };
   }
   if (!referenceDate && recordCreatedAt) {
     const parsed = new Date(recordCreatedAt);

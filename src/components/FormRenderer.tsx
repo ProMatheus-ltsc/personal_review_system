@@ -349,11 +349,18 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     async (status: 'draft' | 'completed') => {
       try {
         setSaveStatus('saving');
-        const record = buildRecord(status);
+        // 首次标记完成时写入完成日期，作为复盘阶段 30 天解锁的基准
+        if (status === 'completed' && isFieldEmpty(getValues('_completedAt'))) {
+          setValue('_completedAt', new Date().toISOString().slice(0, 10), { shouldDirty: false });
+        }
+        // 已完成记录被重新编辑并自动保存时保持 completed 状态，避免被草稿保存降级
+        const finalStatus: 'draft' | 'completed' =
+          status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
+        const record = buildRecord(finalStatus);
         await save(record);
         setLastSaved(new Date());
         setSaveStatus('saved');
-        if (status === 'completed') {
+        if (finalStatus === 'completed') {
           setRecordStatus('completed');
         }
         return record;
@@ -362,7 +369,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         return null;
       }
     },
-    [buildRecord, save]
+    [buildRecord, save, recordStatus, getValues, setValue]
   );
 
   // Auto-save every 30 seconds
@@ -446,6 +453,38 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       }
     })();
   };
+
+  /**
+   * 标记记录为已完成
+   *
+   * 用于 completesRecord 阶段（如决策日志的「决策后」、投资清单的「卖出」）
+   * 完成后、下一阶段被时间锁定的场景：只校验到 completesRecord 阶段为止的
+   * 必填项，不校验被锁定尚未填写的未来阶段字段。
+   */
+  const handleMarkComplete = useCallback(async () => {
+    if (!canMarkComplete()) {
+      showToast('请先完成本阶段的必填项', 'error');
+      return;
+    }
+    const record = await performSave('completed');
+    if (record) {
+      const completesIdx = phases ? phases.findIndex((p) => p.completesRecord) : -1;
+      const nextPhase = phases && completesIdx >= 0 ? phases[completesIdx + 1] : undefined;
+      let msg = `「${template.name}」已完成 ✨`;
+      if (nextPhase?.unlockAfterDays) {
+        const lockInfo = getPhaseTimeLockInfo(
+          nextPhase,
+          getValues(),
+          initialData ? (initialData._createdAt as string) : undefined
+        );
+        if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
+          msg = `已标记为完成，「${nextPhase.label}」将在 ${lockInfo.daysRemaining} 天后解锁`;
+        }
+      }
+      showToast(msg, 'success');
+      onSave?.(record);
+    }
+  }, [canMarkComplete, performSave, phases, template.name, getValues, initialData, showToast, onSave]);
 
   const goNext = () => {
     if (activeTab < template.sections.length - 1) {
@@ -707,13 +746,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                   <div className="mt-3 ml-8">
                     <button
                       type="button"
-                      onClick={async () => {
-                        const record = await performSave('completed');
-                        if (record) {
-                          showToast(`已标记为完成，复盘阶段将在 ${timeLockInfo.daysRemaining} 天后解锁`, 'success');
-                          onSave?.(record);
-                        }
-                      }}
+                      onClick={handleMarkComplete}
                       className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
                     >
                       ✅ 标记为已完成
@@ -827,6 +860,25 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                 className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
               >
                 完成
+              </button>
+            ) : isSectionLocked(activeTab + 1) && recordStatus === 'completed' ? (
+              // 记录已完成，下一阶段仍被时间锁定：显示完成状态
+              <button
+                type="button"
+                disabled
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
+              >
+                ✅ 已完成
+              </button>
+            ) : isSectionLocked(activeTab + 1) && canMarkComplete() ? (
+              // completesRecord 阶段（决策后/卖出）已完成、下一阶段被时间锁定：
+              // 在此即可标记记录完成，复盘阶段将在冷静期后解锁
+              <button
+                type="button"
+                onClick={handleMarkComplete}
+                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
+              >
+                ✅ 完成
               </button>
             ) : (
               <button

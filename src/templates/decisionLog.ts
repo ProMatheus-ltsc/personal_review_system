@@ -8,8 +8,8 @@
  *
  * 阶段设计：
  * - Phase 1「决策前」：做决定时填写，包含基础信息和决策前分析
- * - Phase 2「决策后」：决策后1-7天填写，记录短期执行反馈
- * - Phase 3「长期复盘」：决策后1-3个月填写，评估长期效果
+ * - Phase 2「决策后」：决策后1-7天填写，记录短期执行反馈；完成即标记整个决策日志完成
+ * - Phase 3「长期复盘」：记录完成后1个月提醒填写，评估长期效果
  *
  * 特殊机制：
  * - 条件字段：如「基本不可逆」时强制要求填写退出机制；
@@ -46,11 +46,13 @@ export const decisionLogTemplate: FormTemplate = {
       id: 'long_term',
       label: '长期复盘',
       icon: '🔍',
-      description: '决策后1-3个月填写',
+      description: '记录完成后1个月填写',
       sectionIndices: [3],
       completionFields: ['result_vs_expected'],
+      // 复盘在记录标记完成后 30 天解锁（_completedAt 由表单引擎在完成时写入），
+      // 与投资检查清单按卖出日期解锁的冷静期机制一致
       unlockAfterDays: 30,
-      unlockAfterField: 'decision_date',
+      unlockAfterField: '_completedAt',
     },
   ],
   sections: [
