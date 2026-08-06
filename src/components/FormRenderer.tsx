@@ -401,12 +401,20 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // 判断 section 是否为只读：
   // - 无阶段模板：已完成记录整体只读
-  // - 多阶段模板：当前阶段之前的阶段（已完成锁定）只读，只能查看不能修改
+  // - 多阶段模板：
+  //   1) 当前阶段之前的阶段（已完成锁定）只读，只能查看不能修改
+  //   2) 记录标记完成后，completesRecord 阶段（决策后/卖出）及之前的阶段
+  //      全部锁定，不能再修改（复盘阶段解锁后仍可填写）
   const isSectionReadOnly = useCallback(
     (sectionIndex: number): boolean => {
       if (!phases) return recordStatus === 'completed';
       const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
-      return sectionPhaseIdx < currentPhaseIndex;
+      if (sectionPhaseIdx < currentPhaseIndex) return true;
+      if (recordStatus === 'completed') {
+        const completesIdx = phases.findIndex((p) => p.completesRecord);
+        if (completesIdx >= 0 && sectionPhaseIdx <= completesIdx) return true;
+      }
+      return false;
     },
     [phases, recordStatus, currentPhaseIndex]
   );
@@ -436,8 +444,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       if (phaseIndex > currentPhaseIndex) return;
       const firstSectionIdx = phases[phaseIndex]?.sectionIndices[0];
       if (firstSectionIdx === undefined) return;
-      // 回看已完成的过去阶段：需确认只读查看（已处于只读阶段则无需重复确认）
-      if (phaseIndex < currentPhaseIndex && !isSectionReadOnly(activeTab)) {
+      // 回看已完成/锁定的阶段（含完成后的 completesRecord 阶段）：需确认只读查看
+      // （已处于只读阶段则无需重复确认）
+      if (isSectionReadOnly(firstSectionIdx) && !isSectionReadOnly(activeTab)) {
         setReadonlyConfirmSection(firstSectionIdx);
         return;
       }
