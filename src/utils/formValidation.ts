@@ -15,6 +15,8 @@ export interface ValidationError {
   fieldId: string;
   fieldLabel: string;
   sectionIndex: number;
+  /** 自定义错误文案（如正则校验失败提示），缺省时显示「此字段为必填项」 */
+  message?: string;
 }
 
 /**
@@ -75,6 +77,22 @@ export function validateRequiredFields(
         const value = formData[field.id];
         if (isFieldEmpty(value)) {
           errors.push({ fieldId: field.id, fieldLabel: field.label, sectionIndex });
+        }
+      }
+
+      // 正则校验：非空字段配置了 pattern 时校验格式（如股票代码仅限大写字母和数字）
+      const pattern = field.validation?.pattern;
+      if (pattern) {
+        const value = formData[field.id];
+        if (!isFieldEmpty(value) && typeof value === 'string') {
+          if (!pattern.test(value.trim())) {
+            errors.push({
+              fieldId: field.id,
+              fieldLabel: field.label,
+              sectionIndex,
+              message: field.validation?.patternMessage || '格式不正确',
+            });
+          }
         }
       }
     });

@@ -135,7 +135,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // === Computed fields logic ===
   const computedFields = useMemo(() => {
-    const fields: { id: string; dependsOn: string[]; formula: (v: Record<string, unknown>) => string; placeholder?: string; errorText?: string }[] = [];
+    const fields: { id: string; dependsOn: string[]; formula: (v: Record<string, unknown>) => string; placeholder?: string; errorText?: string; autoOnly?: boolean }[] = [];
     template.sections.forEach((s) => {
       if (s.repeatable) return; // skip repeatable sections
       s.fields.forEach((f) => {
@@ -168,7 +168,14 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     // Calculate and set each computed field
     computedFields.forEach((cf) => {
       const result = cf.formula(depValues);
-      setValue(cf.id, result, { shouldDirty: false });
+      if (cf.autoOnly) {
+        // autoOnly：仅在公式有有效结果时写回；无结果时保留用户手动填写的值
+        if (result !== '') {
+          setValue(cf.id, result, { shouldDirty: false });
+        }
+      } else {
+        setValue(cf.id, result, { shouldDirty: false });
+      }
     });
   }, [watchedComputedDeps, computedFields, computedDependencyFields, setValue]);
 
@@ -473,7 +480,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       // Navigate to the first section with errors
       const firstErrorSection = errors[0].sectionIndex;
       setActiveTab(firstErrorSection);
-      showToast(`有 ${errors.length} 个必填项未完成，请检查`, 'error');
+      showToast(`有 ${errors.length} 个字段未通过校验，请检查`, 'error');
       return;
     }
 
@@ -576,7 +583,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     const validationError = validationErrors.find((err) => err.fieldId === field.id);
     const fieldError = errors[field.id];
     const errorMessage = validationError
-      ? '此字段为必填项'
+      ? (validationError.message || '此字段为必填项')
       : fieldError
         ? typeof fieldError.message === 'string'
           ? fieldError.message
@@ -588,6 +595,16 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
     // Get computed value for computed fields
     const computedValue = field.computed ? (watch(field.id) as string | undefined) : undefined;
+
+    // autoOnly 计算字段：仅当公式有有效结果时锁定为自动计算显示，否则作为普通可编辑字段
+    let computedActive = true;
+    if (field.computed?.autoOnly) {
+      const depMap: Record<string, unknown> = {};
+      field.computed.dependsOn.forEach((d) => {
+        depMap[d] = watch(d);
+      });
+      computedActive = field.computed.formula(depMap) !== '';
+    }
 
     // Compute dynamic options for fields with optionsFrom (linked to a table column)
     let dynamicOptions: { value: string; label: string }[] | undefined;
@@ -613,6 +630,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           templateId={template.id}
           watchedHintValue={watchedHintValue}
           computedValue={computedValue}
+          computedActive={computedActive}
           dynamicOptions={dynamicOptions}
         />
       ) : (
@@ -624,6 +642,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           templateId={template.id}
           watchedHintValue={watchedHintValue}
           computedValue={computedValue}
+          computedActive={computedActive}
           dynamicOptions={dynamicOptions}
         />
       );

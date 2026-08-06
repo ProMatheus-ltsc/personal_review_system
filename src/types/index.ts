@@ -26,7 +26,15 @@ export interface FormField {
   required?: boolean;
   placeholder?: string;
   options?: { value: string; label: string }[];
-  validation?: { min?: number; max?: number; maxLength?: number };
+  validation?: {
+    min?: number;
+    max?: number;
+    maxLength?: number;
+    /** 正则校验（如股票代码仅允许大写字母和数字） */
+    pattern?: RegExp;
+    /** pattern 校验失败时的提示文案 */
+    patternMessage?: string;
+  };
 
   /** Table field column configuration */
   tableColumns?: TableColumn[];
@@ -73,6 +81,11 @@ export interface FormField {
     formula: (values: Record<string, unknown>) => string;  // calculation function
     placeholder?: string;  // shown when dependencies are incomplete
     errorText?: string;  // shown when calculation is invalid (e.g. division by zero)
+    /**
+     * 仅当公式有有效结果时才写回并锁定显示；无有效结果时作为普通可编辑字段。
+     * 用于「分批明细 → 加权均价」等场景：填了明细自动计算，没填则手动填写。
+     */
+    autoOnly?: boolean;
   };
 }
 

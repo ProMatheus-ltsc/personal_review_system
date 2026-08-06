@@ -17,6 +17,28 @@
  */
 import type { FormTemplate } from '@/types';
 
+/**
+ * 从分批明细表格（行含 price/qty）计算加权平均价
+ * @param lots - 表格字段值（数组），每行 { date, price, qty, note }
+ * @returns 加权均价字符串；无有效批次时返回 ''（表示未启用自动计算，可手动填写）
+ */
+function calcWeightedAvg(lots: unknown): string {
+  if (!Array.isArray(lots)) return '';
+  let totalQty = 0;
+  let totalCost = 0;
+  for (const row of lots) {
+    if (typeof row !== 'object' || row === null) continue;
+    const r = row as Record<string, unknown>;
+    const price = parseFloat(String(r.price ?? ''));
+    const qty = parseFloat(String(r.qty ?? ''));
+    if (isNaN(price) || isNaN(qty) || qty <= 0) continue;
+    totalCost += price * qty;
+    totalQty += qty;
+  }
+  if (totalQty <= 0) return '';
+  return (totalCost / totalQty).toFixed(4);
+}
+
 export const investmentChecklistTemplate: FormTemplate = {
   id: 'investment_checklist',
   name: '投资检查清单',
@@ -71,13 +93,31 @@ export const investmentChecklistTemplate: FormTemplate = {
         { id: 'buy_hold_duration', label: '我能持有3-5年不动吗？', type: 'checkbox', emphasis: true, priority: 'required' },
         { id: 'buy_panic_test', label: '如果价格下跌50%，我会恐慌卖出吗？', type: 'checkbox', emphasis: true, priority: 'required', hint: '如果答案是\'会\'，说明仓位可能过重' },
         // === Detail fields ===
-        { id: 'buy_company_name', label: '投资标的', type: 'text', priority: 'required', autocomplete: true },
+        { id: 'buy_company_name', label: '投资标的（股票代码）', type: 'text', priority: 'required', autocomplete: true,
+          placeholder: '如 AAPL / 00700 / 600519',
+          hint: '输入股票代码：仅允许大写英文字母和数字（如 AAPL、00700、600519）',
+          validation: { pattern: /^[A-Z0-9]+$/, patternMessage: '股票代码仅支持大写字母和数字' } },
         { id: 'buy_date', label: '买入日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
         { id: 'buy_currency', label: '交易币种', type: 'radio', priority: 'required', options: [
           { value: 'USD', label: '美元(USD)' }, { value: 'CNY', label: '人民币(CNY)' },
         ], hint: '选择该笔交易使用的货币，后续价格字段将据此标注' },
-        { id: 'buy_price', label: '买入价格', type: 'text', priority: 'required', placeholder: '输入买入价格', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：180.50 美元', 'CNY': '例：25.80 人民币' } },
+        { id: 'buy_price', label: '买入价格', type: 'text', priority: 'required', placeholder: '输入买入价格',
+          hint: '分批买入时自动按「分批买入明细」的加权平均价计算',
+          computed: {
+            autoOnly: true,
+            dependsOn: ['buy_lots'],
+            formula: (values) => calcWeightedAvg(values['buy_lots']),
+            placeholder: '填写分批买入明细后自动按加权均价计算',
+          } },
         { id: 'buy_quantity', label: '买入数量/金额', type: 'text', priority: 'recommended', placeholder: '例：100股', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：100股 或 $10000', 'CNY': '例：100股 或 ¥10000' } },
+        { id: 'buy_lots', label: '分批买入明细（可选）', type: 'table', priority: 'optional',
+          hint: '分批买入时逐行填写，每行一批（价格×数量）；填好后买入价自动按加权平均计算',
+          tableColumns: [
+            { id: 'date', label: '日期', type: 'text', width: '22%' },
+            { id: 'price', label: '价格', type: 'text', width: '26%' },
+            { id: 'qty', label: '数量', type: 'text', width: '26%' },
+            { id: 'note', label: '备注', type: 'text', width: '26%' },
+          ] },
         { id: 'buy_thesis', label: '核心买入逻辑', type: 'textarea', priority: 'required', hint: '写下买入的1-3个核心理由，卖出时回头看', placeholder: '为什么买？这是将来复盘最重要的参考' },
         { id: 'buy_stop_loss_price', label: '止损价格', type: 'text', priority: 'required', hint: '在什么价格你愿意承认错误并退出？', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '输入美元止损价', 'CNY': '输入人民币止损价' } },
         { id: 'buy_target_price_num', label: '目标价格', type: 'text', priority: 'required', hint: '基于你的估值逻辑', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '输入美元目标价', 'CNY': '输入人民币目标价' } },
@@ -155,7 +195,22 @@ export const investmentChecklistTemplate: FormTemplate = {
         { id: 'sell_check_rebuy', label: '已确认：如果今天没有持仓，我不会买入', type: 'checkbox', emphasis: true, priority: 'required', hint: '这是检验持有逻辑最有力的问题' },
         // === Detail fields ===
         { id: 'sell_date', label: '卖出日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
-        { id: 'sell_exit_price', label: '卖出价格', type: 'text', priority: 'required', placeholder: '输入卖出价格', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：220.00 美元', 'CNY': '例：30.50 人民币' } },
+        { id: 'sell_exit_price', label: '卖出价格', type: 'text', priority: 'required', placeholder: '输入卖出价格',
+          hint: '分批卖出时自动按「分批卖出明细」的加权平均价计算',
+          computed: {
+            autoOnly: true,
+            dependsOn: ['sell_lots'],
+            formula: (values) => calcWeightedAvg(values['sell_lots']),
+            placeholder: '填写分批卖出明细后自动按加权均价计算',
+          } },
+        { id: 'sell_lots', label: '分批卖出明细（可选）', type: 'table', priority: 'optional',
+          hint: '分批卖出时逐行填写，每行一批（价格×数量）；填好后卖出价自动按加权平均计算',
+          tableColumns: [
+            { id: 'date', label: '日期', type: 'text', width: '22%' },
+            { id: 'price', label: '价格', type: 'text', width: '26%' },
+            { id: 'qty', label: '数量', type: 'text', width: '26%' },
+            { id: 'note', label: '备注', type: 'text', width: '26%' },
+          ] },
         { id: 'sell_reason', label: '卖出原因', type: 'radio', priority: 'required', options: [
           { value: '到达目标价', label: '到达目标价' }, { value: '触发止损', label: '触发止损' }, { value: '买入逻辑改变', label: '买入逻辑改变' },
           { value: '基本面恶化', label: '基本面恶化' }, { value: '找到更好机会', label: '找到更好机会' }, { value: '情绪驱动（恐慌/贪婪）', label: '情绪驱动（恐慌/贪婪）' },
