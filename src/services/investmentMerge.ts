@@ -1,0 +1,300 @@
+/**
+ * investmentMerge — 同股票代码投资记录自动合并服务
+ *
+ * 分笔记录模式：每笔买入/卖出是一条独立的「投资检查清单」记录。
+ * 整个投资生命周期最终只保留【一份单据】：
+ *
+ * - 买入合并（mergeSameCodeBuys）：
+ *   同股票代码、双方都是「持有中」的开放持仓（买入完成、未清仓）
+ *   → 合并成一份持仓单据：加权买入价 + 逐笔买入明细，旧记录删除、快照保留。
+ *   部分卖出后的剩余持仓仍然参与买入合并（剩余部分继续合并新买入）。
+ *
+ * - 卖出批次（applySellBatch）：
+ *   在持仓单据上填写卖出并保存时，本次卖出拆成一个批次（日期/价格/数量/原因）
+ *   → 立即并入该单据的 merged_sell_lots（加权卖出价 + 逐笔卖出明细）。
+ *   同一持仓单据的多次卖出批次自然合并；不同单据（不同投资周期）互不混合。
+ *   - 部分卖出（卖出量 < 总持仓）：清空顶层卖出字段，单据回到「持有中」，
+ *     剩余持仓继续支持合并新买入，复盘阶段保持锁定。
+ *   - 全部卖出（卖出量 >= 总持仓）：恢复顶层卖出字段
+ *     （sell_date = 最后卖出日期，+30 天冷静期后复盘解锁；sell_exit_price = 加权卖出价），
+ *     单据标记 sold_out，成为唯一复盘单据，复盘和数据分析都在这一份上做。
+ *
+ * 阶段定义（投资检查清单）：0 买入 / 1 持有 / 2 卖出 / 3 复盘
+ */
+import { getAllRecords, saveRecord, deleteRecord } from '@/services/db';
+import type { FormRecord } from '@/types';
+import { isFieldEmpty } from '@/utils/formValidation';
+import { getCurrentPhaseIndex } from '@/utils/formValidation';
+import { investmentChecklistTemplate } from '@/templates';
+
+export interface MergeResult {
+  merged: number;
+  /** 合并后的记录数据（用于同步表单） */
+  data: Record<string, unknown>;
+  /** 是否已全部卖出（供调用方区分 Toast 文案） */
+  soldOut?: boolean;
+  /** 剩余持仓（部分卖出时 > 0） */
+  remainingQty?: number;
+  /** 业务错误（如卖出数量超过剩余持仓），有值时表示本次未做任何合并写入 */
+  error?: string;
+}
+
+interface LotInput {
+  date?: string;
+  price?: string | number;
+  qty?: string | number;
+  reason?: string;
+  /** 来源单据 id（同一单据的卖出批次据此去重） */
+  source_record_id?: string;
+}
+
+export interface SellLot extends LotInput {}
+
+const PHASE_BUYING = 0;
+const PHASE_HOLDING = 1;
+const PHASE_REVIEW = 3;
+
+const phases = investmentChecklistTemplate.phases!;
+
+function toNum(v: unknown): number | undefined {
+  if (v === undefined || v === null || String(v).trim() === '') return undefined;
+  const n = parseFloat(String(v));
+  return isNaN(n) ? undefined : n;
+}
+
+function weightedAvg(lots: { price: number; qty: number }[]): number | undefined {
+  let qty = 0;
+  let cost = 0;
+  for (const l of lots) {
+    if (l.qty <= 0) continue;
+    cost += l.price * l.qty;
+    qty += l.qty;
+  }
+  return qty > 0 ? cost / qty : undefined;
+}
+
+function isSellFilled(r: FormRecord): boolean {
+  return !isFieldEmpty(r.data.sell_exit_price);
+}
+
+/** 计算某条投资记录当前所处的阶段索引 */
+function phaseOf(r: FormRecord): number {
+  return getCurrentPhaseIndex(
+    phases,
+    r.data as Record<string, any>,
+    investmentChecklistTemplate.sections,
+    r.createdAt
+  );
+}
+
+/** 收集一条记录的买入批次（优先使用已有的合并明细，否则用字段值） */
+function collectBuyLots(r: FormRecord, source: string): { date?: string; price: number; qty: number; source: string }[] {
+  const lots: { date?: string; price: number; qty: number; source: string }[] = [];
+  const date = (r.data.buy_date as string) || undefined;
+  const existing = Array.isArray(r.data.merged_buy_lots) ? (r.data.merged_buy_lots as LotInput[]) : [];
+  if (existing.length > 0) {
+    existing.forEach((l) => {
+      const p = toNum(l.price);
+      const q = toNum(l.qty);
+      if (p !== undefined && q !== undefined) lots.push({ date: l.date || date, price: p, qty: q, source });
+    });
+  } else {
+    const p = toNum(r.data.buy_price);
+    const q = toNum(r.data.buy_quantity);
+    if (p !== undefined && q !== undefined) lots.push({ date, price: p, qty: q, source });
+  }
+  return lots;
+}
+
+function appendSnapshots(currentData: Record<string, unknown>, absorbees: FormRecord[]): unknown[] {
+  const snapshots = Array.isArray(currentData.merged_snapshots) ? [...(currentData.merged_snapshots as unknown[])] : [];
+  absorbees.forEach((r) => {
+    snapshots.push({ recordId: r.id, title: r.title, data: r.data });
+  });
+  return snapshots;
+}
+
+/** 读取一条记录的累计卖出批次（合并明细） */
+function readSellLots(r: FormRecord): SellLot[] {
+  return Array.isArray(r.data.merged_sell_lots) ? (r.data.merged_sell_lots as SellLot[]) : [];
+}
+
+/** 计算一条记录的总买入数量（优先合并总量，否则单笔数量） */
+function totalBuyQtyOf(r: FormRecord): number {
+  return toNum(r.data.merged_total_qty) ?? toNum(r.data.buy_quantity) ?? 0;
+}
+
+/**
+ * 判断是否为「持有中」的开放持仓记录：
+ * 买入阶段已完成（phase >= 1）且未卖出、且未清仓（sold_out）。
+ * 部分卖出后的剩余持仓（merged_sell_lots 非空但顶层卖出字段已清空）仍视为开放持仓，
+ * 可继续合并新买入的同代码记录。
+ */
+function isOpenPosition(r: FormRecord): boolean {
+  if (r.data.sold_out === true) return false;
+  if (isSellFilled(r)) return false;
+  return phaseOf(r) >= PHASE_HOLDING;
+}
+
+/**
+ * 买入合并：同代码、双方都是持有中的开放持仓 → 合并成一份持仓单据
+ * - 被吸收记录的卖出批次（merged_sell_lots）一并并入当前单据，不丢失
+ * - 部分卖出后的持仓单仍可参与（剩余持仓继续合并新买入）
+ * @returns 合并数量与合并后的数据；不满足前提时返回 null
+ */
+export async function mergeSameCodeBuys(current: FormRecord): Promise<MergeResult | null> {
+  const code = String(current.data.buy_company_name ?? '').trim();
+  if (!code) return null;
+  // 前提：当前单据是开放持仓（买入完成、未清仓）
+  if (!isOpenPosition(current)) return null;
+
+  const all = await getAllRecords('investment_checklist');
+  const absorbees = all.filter(
+    (r) =>
+      r.id !== current.id &&
+      String(r.data.buy_company_name ?? '').trim() === code &&
+      isOpenPosition(r)
+  );
+  if (absorbees.length === 0) return null;
+
+  const lots = [...collectBuyLots(current, '当前记录')];
+  absorbees.forEach((r) => lots.push(...collectBuyLots(r, '历史记录')));
+
+  // 被吸收记录的历史卖出批次一并并入（同一投资周期内的部分卖出明细不丢失）
+  const sellLots = [...readSellLots(current)];
+  absorbees.forEach((r) => sellLots.push(...readSellLots(r)));
+
+  const weighted = weightedAvg(lots);
+  const totalQty = lots.reduce((s, l) => s + l.qty, 0);
+  const data: Record<string, unknown> = { ...current.data };
+  if (weighted !== undefined) data.buy_price = weighted.toFixed(4);
+  data.merged_buy_lots = lots;
+  data.merged_total_qty = totalQty;
+  data.merged_sell_lots = sellLots;
+  data.merged_total_sell_qty = sellLots.reduce((s, l) => s + (toNum(l.qty) ?? 0), 0);
+  data.merged_snapshots = appendSnapshots(current.data, absorbees);
+  // 卖出批次重算加权卖出价（若存在）
+  const sellWeighted = weightedAvg(sellLots.map((l) => ({ price: toNum(l.price) ?? 0, qty: toNum(l.qty) ?? 0 })));
+  if (sellWeighted !== undefined && sellLots.length > 0) {
+    data.sell_exit_price = sellWeighted.toFixed(4);
+  }
+
+  const updated: FormRecord = { ...current, data, updatedAt: new Date().toISOString() };
+  await saveRecord(updated);
+  for (const r of absorbees) await deleteRecord(r.id);
+  return { merged: absorbees.length, data };
+}
+
+/** 顶层卖出字段列表（拆分后需要从持仓单据上清空，使其回到持有状态） */
+const SELL_TOP_LEVEL_FIELDS = [
+  'sell_date',
+  'sell_exit_price',
+  'sell_quantity',
+  'sell_reason',
+  'sell_reason_other',
+  'sell_pnl_percent',
+  'sell_hold_days',
+  'sell_emotion_state',
+  'sell_check_reason',
+  'sell_check_rebuy',
+];
+
+/**
+ * 卖出批次拆分并入（在持仓单据上填写卖出并保存时触发）：
+ * 把本次卖出（sell_date / sell_exit_price / sell_quantity / sell_reason）
+ * 拆成一个批次并入单据自身的 merged_sell_lots，同批次（日期+价格+数量相同）
+ * 去重更新，避免自动保存重复追加。
+ *
+ * - 部分卖出：清空顶层卖出字段，单据保持「持有中」，复盘锁定；
+ * - 全部卖出（卖出数量 = 总持仓数量）：恢复顶层卖出字段（sell_date = 最后卖出日期，
+ *   +30 天解锁复盘；sell_exit_price = 加权卖出价），标记 sold_out。
+ * - 超卖（卖出数量 > 剩余持仓）：视为数据错误，返回 error，不做任何写入。
+ *
+ * @returns 合并后的数据；未填卖出价格时返回 null；超卖时返回 { error }
+ */
+export async function applySellBatch(current: FormRecord): Promise<MergeResult | null> {
+  const code = String(current.data.buy_company_name ?? '').trim();
+  if (!code) return null;
+  const price = toNum(current.data.sell_exit_price);
+  if (price === undefined) return null;
+
+  // 已累计的卖出批次 + 本次批次
+  const lots = readSellLots(current);
+  const sellDate = (current.data.sell_date as string) || undefined;
+  const qtyInput = toNum(current.data.sell_quantity);
+  const reason = (current.data.sell_reason as string) || undefined;
+  const totalBuy = totalBuyQtyOf(current);
+  const totalSellBefore = lots.reduce((s, l) => s + (toNum(l.qty) ?? 0), 0);
+  // 未填写卖出数量时默认卖出全部剩余持仓
+  const remainingBefore = totalBuy - totalSellBefore;
+  const qty = qtyInput !== undefined && qtyInput > 0 ? qtyInput : remainingBefore;
+
+  // 超卖校验：卖出数量不能超过剩余持仓（严格 <= 剩余；全部卖出仅当恰好等于总持仓）
+  if (qty > remainingBefore) {
+    return {
+      merged: 0,
+      data: current.data,
+      error: `卖出数量（${qty}）超过剩余持仓（${remainingBefore}），请修改后重新保存`,
+    };
+  }
+
+  const batch: SellLot = {
+    date: sellDate,
+    price,
+    qty,
+    reason,
+    source_record_id: current.id,
+  };
+
+  // 同批次（日期+价格+数量相同）去重更新，避免自动保存重复追加
+  const key = `${sellDate ?? ''}|${price}|${qty}`;
+  const existingIdx = lots.findIndex(
+    (l) => `${l.date ?? ''}|${toNum(l.price) ?? ''}|${toNum(l.qty) ?? ''}` === key
+  );
+  if (existingIdx >= 0) {
+    lots[existingIdx] = { ...lots[existingIdx], ...batch };
+  } else {
+    lots.push(batch);
+  }
+
+  const totalSell = lots.reduce((s, l) => s + (toNum(l.qty) ?? 0), 0);
+  const sellWeighted = weightedAvg(lots.map((l) => ({ price: toNum(l.price) ?? 0, qty: toNum(l.qty) ?? 0 })));
+  const lastSellDate = lots
+    .map((l) => l.date)
+    .filter((d): d is string => !!d)
+    .sort()
+    .pop();
+  const remaining = totalBuy - totalSell;
+  // 全部卖出 = 卖出数量恰好等于总持仓数量（严格相等；超卖已被上方拦截）
+  const soldOut = remaining === 0;
+
+  const data: Record<string, unknown> = { ...current.data };
+  data.merged_sell_lots = lots;
+  data.merged_total_sell_qty = totalSell;
+  if (sellWeighted !== undefined) data.sell_exit_price = sellWeighted.toFixed(4);
+  if (lastSellDate) data.last_sell_date = lastSellDate;
+  data.sold_out = soldOut;
+
+  if (soldOut) {
+    // 全部卖出：恢复顶层卖出字段 → 阶段推进到「已卖出」，sell_date = 最后卖出日期 → 30 天后复盘解锁
+    data.sell_date = lastSellDate || sellDate;
+    data.sell_quantity = String(totalSell);
+    data.sell_status = 'full';
+    // sell_exit_price 已是加权卖出价；sell_reason 取最后一批的原因
+    data.sell_reason = reason ?? lots[lots.length - 1]?.reason ?? '';
+    data.remaining_qty = 0;
+  } else {
+    // 部分卖出：清空顶层卖出字段，回到持有状态，复盘保持锁定
+    SELL_TOP_LEVEL_FIELDS.forEach((f) => {
+      data[f] = '';
+    });
+    data.sell_status = 'partial';
+    data.remaining_qty = remaining;
+  }
+
+  const updated: FormRecord = { ...current, data, updatedAt: new Date().toISOString() };
+  await saveRecord(updated);
+  return { merged: lots.length - (existingIdx >= 0 ? 1 : 0), data, soldOut, remainingQty: remaining };
+}
+
+export { PHASE_BUYING, PHASE_HOLDING, PHASE_REVIEW };

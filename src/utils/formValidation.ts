@@ -95,6 +95,30 @@ export function validateRequiredFields(
           }
         }
       }
+
+      // 数值范围校验：非空字段配置了 min/max 时按数值比较（text 字段的 RHF min 是字符串长度语义，这里统一按数值判断）
+      const min = field.validation?.min;
+      const max = field.validation?.max;
+      if ((min !== undefined || max !== undefined) && !isFieldEmpty(formData[field.id])) {
+        const num = Number(formData[field.id]);
+        if (!isNaN(num)) {
+          if (min !== undefined && num < min) {
+            errors.push({
+              fieldId: field.id,
+              fieldLabel: field.label,
+              sectionIndex,
+              message: `不能小于 ${min}`,
+            });
+          } else if (max !== undefined && num > max) {
+            errors.push({
+              fieldId: field.id,
+              fieldLabel: field.label,
+              sectionIndex,
+              message: `不能大于 ${max}`,
+            });
+          }
+        }
+      }
     });
   });
   return { valid: errors.length === 0, errors };

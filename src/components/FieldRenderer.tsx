@@ -35,8 +35,6 @@ interface FieldRendererProps {
   watchedHintValue?: string;
   /** Current computed value (set externally via useWatch+setValue) */
   computedValue?: string;
-  /** autoOnly 计算字段：false 表示公式无有效结果，按普通可编辑字段渲染 */
-  computedActive?: boolean;
   /** Dynamic options derived from another field (e.g. table column) */
   dynamicOptions?: { value: string; label: string }[];
   /** When true, use value+onChange for all field types (controlled mode) */
@@ -62,7 +60,6 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
   templateId,
   watchedHintValue,
   computedValue,
-  computedActive = true,
   dynamicOptions,
   controlled,
 }) {
@@ -159,8 +156,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
 
   const renderField = () => {
     // Computed field: render as read-only display
-    // （autoOnly 计算字段在无有效结果时按普通字段渲染，允许手动填写）
-    if (field.computed && computedActive) {
+    if (field.computed) {
       const displayValue = computedValue || '';
       const isError = displayValue === '__ERROR__';
       const isEmpty = !displayValue;

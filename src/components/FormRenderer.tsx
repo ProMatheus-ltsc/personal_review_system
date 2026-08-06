@@ -29,6 +29,8 @@ import Toast from './Toast';
 import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
 import ConfirmDialog from './ConfirmDialog';
+import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
+import { mergeSameCodeBuys, applySellBatch, PHASE_REVIEW } from '@/services/investmentMerge';
 
 /**
  * 解析模板字段中的 magic string defaultValue 为实际值
@@ -142,7 +144,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // === Computed fields logic ===
   const computedFields = useMemo(() => {
-    const fields: { id: string; dependsOn: string[]; formula: (v: Record<string, unknown>) => string; placeholder?: string; errorText?: string; autoOnly?: boolean }[] = [];
+    const fields: { id: string; dependsOn: string[]; formula: (v: Record<string, unknown>) => string; placeholder?: string; errorText?: string }[] = [];
     template.sections.forEach((s) => {
       if (s.repeatable) return; // skip repeatable sections
       s.fields.forEach((f) => {
@@ -175,14 +177,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     // Calculate and set each computed field
     computedFields.forEach((cf) => {
       const result = cf.formula(depValues);
-      if (cf.autoOnly) {
-        // autoOnly：仅在公式有有效结果时写回；无结果时保留用户手动填写的值
-        if (result !== '') {
-          setValue(cf.id, result, { shouldDirty: false });
-        }
-      } else {
-        setValue(cf.id, result, { shouldDirty: false });
-      }
+      setValue(cf.id, result, { shouldDirty: false });
     });
   }, [watchedComputedDeps, computedFields, computedDependencyFields, setValue]);
 
@@ -364,6 +359,38 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     initialData?._status as 'draft' | 'completed' || 'draft'
   );
 
+  /** 将合并后的数据同步回表单，保证界面与库中一致（含卖出字段清空） */
+  const syncMergedData = useCallback(
+    (data: Record<string, unknown>) => {
+      (
+        [
+          'buy_price',
+          'merged_buy_lots',
+          'merged_total_qty',
+          'sell_exit_price',
+          'sell_date',
+          'sell_quantity',
+          'sell_reason',
+          'sell_reason_other',
+          'sell_emotion_state',
+          'sell_check_reason',
+          'sell_check_rebuy',
+          'merged_sell_lots',
+          'merged_total_sell_qty',
+          'last_sell_date',
+          'sold_out',
+          'remaining_qty',
+          'sell_status',
+          'merged_snapshots',
+          'parent_position_id',
+        ] as const
+      ).forEach((k) => {
+        if (k in data) setValue(k, data[k], { shouldDirty: false });
+      });
+    },
+    [setValue]
+  );
+
   const performSave = useCallback(
     async (status: 'draft' | 'completed') => {
       try {
@@ -377,6 +404,44 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
         const record = buildRecord(finalStatus);
         await save(record);
+
+        // 投资清单：保存后自动合并同股票代码的分笔记录（整个生命周期只保留一份单据）
+        if (template.id === 'investment_checklist') {
+          const code = String(record.data.buy_company_name ?? '').trim();
+          if (code) {
+            // 卖出拆分并入：填写了卖出 → 本笔卖出拆成批次立即并入当前单据
+            if (!isFieldEmpty(record.data.sell_exit_price)) {
+              const res = await applySellBatch(record);
+              if (res?.error) {
+                showToast(res.error, 'error');
+              } else if (res) {
+                syncMergedData(res.data);
+                if (res.soldOut) {
+                  showToast(
+                    `已全部卖出（${code}），加权卖出价 ${res.data.sell_exit_price ?? ''}，复盘将于最后卖出日期 30 天后解锁`,
+                    'success'
+                  );
+                } else {
+                  showToast(
+                    `已记录本次卖出（${code}），剩余持仓 ${res.remainingQty ?? 0}，可继续买入合并`,
+                    'success'
+                  );
+                }
+              }
+            } else {
+              // 买入合并：前提是同代码且双方都是持有中的开放持仓（未清仓）
+              const res = await mergeSameCodeBuys(record);
+              if (res) {
+                syncMergedData(res.data);
+                showToast(
+                  `已自动合并 ${res.merged} 份同代码买入记录（${code}），加权买入价已更新`,
+                  'success'
+                );
+              }
+            }
+          }
+        }
+
         setLastSaved(new Date());
         setSaveStatus('saved');
         if (finalStatus === 'completed') {
@@ -388,7 +453,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         return null;
       }
     },
-    [buildRecord, save, recordStatus, getValues, setValue]
+    [buildRecord, save, recordStatus, getValues, setValue, template, syncMergedData, showToast]
   );
 
   // Auto-save every 30 seconds (skip fully read-only completed records)
@@ -612,16 +677,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     // Get computed value for computed fields
     const computedValue = field.computed ? (watch(field.id) as string | undefined) : undefined;
 
-    // autoOnly 计算字段：仅当公式有有效结果时锁定为自动计算显示，否则作为普通可编辑字段
-    let computedActive = true;
-    if (field.computed?.autoOnly) {
-      const depMap: Record<string, unknown> = {};
-      field.computed.dependsOn.forEach((d) => {
-        depMap[d] = watch(d);
-      });
-      computedActive = field.computed.formula(depMap) !== '';
-    }
-
     // Compute dynamic options for fields with optionsFrom (linked to a table column)
     let dynamicOptions: { value: string; label: string }[] | undefined;
     if (field.optionsFrom) {
@@ -646,7 +701,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           templateId={template.id}
           watchedHintValue={watchedHintValue}
           computedValue={computedValue}
-          computedActive={computedActive}
           dynamicOptions={dynamicOptions}
         />
       ) : (
@@ -658,7 +712,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           templateId={template.id}
           watchedHintValue={watchedHintValue}
           computedValue={computedValue}
-          computedActive={computedActive}
           dynamicOptions={dynamicOptions}
         />
       );
@@ -739,6 +792,26 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           onPhaseClick={handlePhaseClick}
           formData={getValues()}
           recordCreatedAt={initialData ? (initialData._createdAt as string) : undefined}
+        />
+      )}
+
+      {/* 投资清单：同股票代码分笔记录合并后的持仓/卖出明细 */}
+      {template.id === 'investment_checklist' && (
+        <InvestmentMergePanel
+          stockCode={(watch('buy_company_name') as string) || ''}
+          mergedBuyLots={watch('merged_buy_lots') as MergeLot[] | undefined}
+          weightedBuy={watch('buy_price') as string | undefined}
+          totalBuyQty={watch('merged_total_qty') as string | number | undefined}
+          mergedSellLots={watch('merged_sell_lots') as MergeLot[] | undefined}
+          weightedSell={watch('sell_exit_price') as string | undefined}
+          totalSellQty={watch('merged_total_sell_qty') as string | number | undefined}
+          soldOut={watch('sold_out') as boolean | undefined}
+          lastSellDate={watch('last_sell_date') as string | undefined}
+          emptyText={
+            currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
+              ? '📌 同代码且都在持有阶段的买入记录会自动合并进当前单据（加权买入价 + 逐笔明细）；部分卖出的剩余持仓仍可合并新买入，全部卖出后以最后卖出日期为准 30 天解锁复盘'
+              : undefined
+          }
         />
       )}
 
