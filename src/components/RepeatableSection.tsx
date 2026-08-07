@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { FormSection, FormField } from '@/types';
 import FieldRenderer from './FieldRenderer';
 import type { TemplateId } from '@/types';
@@ -33,6 +33,17 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
     // Default: expand the last entry
     return new Set([entries.length - 1]);
   });
+
+  // entries 可能在挂载后异步加载（初始为空数组，随后回填历史数据），
+  // 此时上面的 useState 初始化函数已经跑过、不会重新执行——
+  // 用这个 effect 补一次「首次拿到非空数据时展开最后一条」
+  const hasInitializedRef = useRef(entries.length > 0);
+  useEffect(() => {
+    if (!hasInitializedRef.current && entries.length > 0) {
+      hasInitializedRef.current = true;
+      setExpandedIndices(new Set([entries.length - 1]));
+    }
+  }, [entries.length]);
 
   const [deleteConfirmIdx, setDeleteConfirmIdx] = useState<number | null>(null);
 
