@@ -114,6 +114,11 @@ export function useAuth() {
     setState((prev) => ({ ...prev, isAuthenticated: false }));
   }, []);
 
+  const resetPassword = useCallback(async () => {
+    await authService.resetPassword();
+    setState({ isAuthenticated: false, isFirstTime: true, loading: false });
+  }, []);
+
   return {
     isAuthenticated: state.isAuthenticated,
     isFirstTime: state.isFirstTime,
@@ -121,5 +126,6 @@ export function useAuth() {
     login,
     setPassword,
     logout,
+    resetPassword,
   };
 }
