@@ -55,81 +55,96 @@ export default function InvestmentStats({ timeRange }: Props) {
   const pnlColor = (v: number | null) =>
     v === null ? '' : v > 0 ? 'text-red-600' : v < 0 ? 'text-green-600' : 'text-gray-700';
 
+  const rows: { label: string; value: string; valueClass?: string; note: string }[] = [
+    {
+      label: '投资单据',
+      value: String(stats.totalTrades),
+      note: `合并后单据 · 卖出 ${stats.totalSellBatches} 笔`,
+    },
+    {
+      label: '已平仓',
+      value: String(stats.closedTrades),
+      note: `平均持有 ${stats.avgHoldDays !== null ? `${stats.avgHoldDays} 天` : '-'}`,
+    },
+    {
+      label: '胜率',
+      value: stats.winRate !== null ? `${stats.winRate}%` : '-',
+      valueClass: stats.winRate !== null && stats.winRate >= 50 ? 'text-green-700' : 'text-red-700',
+      note: '盈利单据占比（已平仓）',
+    },
+    {
+      label: '风险回报比',
+      value: stats.avgRiskReward !== null ? `${stats.avgRiskReward}:1` : '-',
+      note: '平均值',
+    },
+    {
+      label: '累计已实现盈亏',
+      value: fmtMoney(stats.totalProfitAmount),
+      valueClass: pnlColor(stats.totalProfitAmount),
+      note: '按单据币种加总',
+    },
+    {
+      label: '平均盈亏',
+      value: stats.avgProfitPercent !== null ? `${stats.avgProfitPercent > 0 ? '+' : ''}${stats.avgProfitPercent}%` : '-',
+      valueClass: pnlColor(stats.avgProfitPercent),
+      note: '已平仓单据',
+    },
+  ];
+
+  const totalDistribution = stats.profitDistribution.reduce((s, item) => s + item.count, 0);
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <div className="rounded-lg border p-3 bg-blue-50 border-blue-100">
-          <p className="text-xs text-gray-500 mb-1">投资单据</p>
-          <p className="text-xl font-bold text-blue-700">{stats.totalTrades}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            合并后单据 · 卖出 {stats.totalSellBatches} 笔
-          </p>
-        </div>
-        <div className="rounded-lg border p-3 bg-emerald-50 border-emerald-100">
-          <p className="text-xs text-gray-500 mb-1">已平仓</p>
-          <p className="text-xl font-bold text-emerald-700">{stats.closedTrades}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            平均持有 {stats.avgHoldDays !== null ? `${stats.avgHoldDays} 天` : '-'}
-          </p>
-        </div>
-        <div className={`rounded-lg border p-3 ${
-          stats.winRate !== null && stats.winRate >= 50
-            ? 'bg-green-50 border-green-100'
-            : 'bg-red-50 border-red-100'
-        }`}>
-          <p className="text-xs text-gray-500 mb-1">胜率</p>
-          <p className={`text-xl font-bold ${
-            stats.winRate !== null && stats.winRate >= 50 ? 'text-green-700' : 'text-red-700'
-          }`}>
-            {stats.winRate !== null ? `${stats.winRate}%` : '-'}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">盈利单据占比</p>
-        </div>
-        <div className="rounded-lg border p-3 bg-purple-50 border-purple-100">
-          <p className="text-xs text-gray-500 mb-1">风险回报比</p>
-          <p className="text-xl font-bold text-purple-700">
-            {stats.avgRiskReward !== null ? `${stats.avgRiskReward}:1` : '-'}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">平均值</p>
-        </div>
-        <div className="rounded-lg border p-3 bg-white border-gray-200">
-          <p className="text-xs text-gray-500 mb-1">累计已实现盈亏</p>
-          <p className={`text-xl font-bold ${pnlColor(stats.totalProfitAmount)}`}>
-            {fmtMoney(stats.totalProfitAmount)}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">按单据币种加总</p>
-        </div>
-        <div className="rounded-lg border p-3 bg-white border-gray-200">
-          <p className="text-xs text-gray-500 mb-1">平均盈亏</p>
-          <p className={`text-xl font-bold ${pnlColor(stats.avgProfitPercent)}`}>
-            {stats.avgProfitPercent !== null ? `${stats.avgProfitPercent > 0 ? '+' : ''}${stats.avgProfitPercent}%` : '-'}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">已平仓单据</p>
-        </div>
+      <div className="overflow-x-auto bg-white border border-gray-200 rounded-lg">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-left text-gray-500">
+              <th className="px-4 py-2 font-medium">指标</th>
+              <th className="px-4 py-2 font-medium">数值</th>
+              <th className="px-4 py-2 font-medium">说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-t border-gray-100">
+                <td className="px-4 py-2.5 text-gray-600">{row.label}</td>
+                <td className={`px-4 py-2.5 font-semibold ${row.valueClass || 'text-gray-900'}`}>{row.value}</td>
+                <td className="px-4 py-2.5 text-gray-400">{row.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* 盈亏分布 */}
       {stats.profitDistribution.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">💰 盈亏分布</h4>
-          <div className="flex flex-wrap gap-2">
-            {stats.profitDistribution.map((item) => {
-              const colorClass = item.name === '盈利'
-                ? 'bg-green-50 text-green-700'
-                : item.name === '亏损'
-                  ? 'bg-red-50 text-red-700'
-                  : 'bg-gray-50 text-gray-700';
-              return (
-                <span
-                  key={item.name}
-                  className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${colorClass}`}
-                >
-                  {item.name}
-                  <span className="font-medium">{item.count}单</span>
-                </span>
-              );
-            })}
-          </div>
+        <div className="overflow-x-auto bg-white border border-gray-200 rounded-lg">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-left text-gray-500">
+                <th className="px-4 py-2 font-medium">💰 盈亏分布</th>
+                <th className="px-4 py-2 font-medium">单据数</th>
+                <th className="px-4 py-2 font-medium">占比</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.profitDistribution.map((item) => {
+                const colorClass = item.name === '盈利'
+                  ? 'text-green-700'
+                  : item.name === '亏损'
+                    ? 'text-red-700'
+                    : 'text-gray-700';
+                const pct = totalDistribution > 0 ? Math.round((item.count / totalDistribution) * 100) : 0;
+                return (
+                  <tr key={item.name} className="border-t border-gray-100">
+                    <td className={`px-4 py-2.5 font-medium ${colorClass}`}>{item.name}</td>
+                    <td className="px-4 py-2.5 text-gray-700">{item.count} 单</td>
+                    <td className="px-4 py-2.5 text-gray-400">{pct}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
