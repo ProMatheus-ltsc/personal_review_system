@@ -405,7 +405,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   );
 
   const performSave = useCallback(
-    async (status: 'draft' | 'completed') => {
+    async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {
       try {
         setSaveStatus('saving');
         // 首次标记完成时写入完成日期，作为复盘阶段 30 天解锁的基准
@@ -419,7 +419,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         await save(record);
 
         // 投资清单：保存后自动合并同股票代码的分笔记录（整个生命周期只保留一份单据）
-        if (template.id === 'investment_checklist') {
+        // skipMerge=true 用于 30 秒定时自动保存：用户可能还在填写买入阶段，此时不应触发合并，
+        // 避免"填到一半就被合并走"的困惑体验。合并只在用户主动保存/切换 tab/点完成时触发。
+        if (template.id === 'investment_checklist' && !skipMerge) {
           const code = String(record.data.buy_company_name ?? '').trim();
           if (code) {
             // 卖出拆分并入：填写了卖出 → 本笔卖出拆成批次立即并入当前单据
@@ -476,7 +478,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   useEffect(() => {
     if (recordStatus === 'completed' && !phases) return;
     autoSaveRef.current = setInterval(() => {
-      performSave('draft');
+      performSave('draft', { skipMerge: true });
     }, 30000);
 
     return () => {
