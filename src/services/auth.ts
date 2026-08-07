@@ -176,3 +176,16 @@ export function isAuthenticated(): boolean {
 export function logout(): void {
   sessionStorage.removeItem(SESSION_KEY);
 }
+
+/**
+ * 重置密码（忘记密码时使用）
+ *
+ * 仅删除 password_hash 设置项，保留所有业务数据（记录、其他设置）不受影响。
+ * 重置后等同于首次使用状态，需重新设置密码。
+ */
+export async function resetPassword(): Promise<void> {
+  const { initDB: getDB } = await import('./db');
+  const db = await getDB();
+  await db.delete('settings', 'password_hash');
+  sessionStorage.removeItem(SESSION_KEY);
+}
