@@ -1,192 +1,693 @@
 /**
- * InvestmentStats — 投资检查清单统计组件
+ * 统计计算服务
  *
- * 两部分：
- * 1. 总体指标汇总表（胜率/平均盈亏/风险回报比等）
- * 2. 逐笔交易明细表（仅已平仓）：每个投资周期一组，内含按时间排序的多笔买入/卖出子行
+ * 从 IndexedDB 历史记录中聚合计算各模板的统计数据。
+ * 支持按时间范围过滤：本月、近3月、全部。
  */
-import { useEffect, useState } from 'react';
-import {
-  InvestmentStats as InvestmentStatsType,
-  TradeDetail,
-  calcInvestmentStats,
-  calcTradeDetails,
-  getFilteredRecords,
-  TimeRange,
-} from '@/services/stats';
+import { FormRecord, TemplateId } from '@/types';
+import { getAllRecords } from '@/services/db';
+import { startOfMonth, subMonths, isAfter } from 'date-fns';
 
-interface Props {
-  timeRange: TimeRange;
+export type TimeRange = 'month' | 'quarter' | 'all';
+
+/**
+ * 根据时间范围过滤记录
+ */
+function filterByTimeRange(records: FormRecord[], range: TimeRange): FormRecord[] {
+  if (range === 'all') return records;
+  const now = new Date();
+  const start = range === 'month' ? startOfMonth(now) : startOfMonth(subMonths(now, 3));
+  return records.filter((r) => isAfter(new Date(r.createdAt), start));
 }
 
-function fmtMoney(n: number | null, digits = 2): string {
-  if (n === null) return '-';
-  const sign = n > 0 ? '+' : '';
-  return `${sign}${n.toFixed(digits)}`;
+/**
+ * 获取指定模板和时间范围的记录（仅已完成记录，排除草稿）
+ */
+export async function getFilteredRecords(
+  templateId: TemplateId,
+  range: TimeRange
+): Promise<FormRecord[]> {
+  const records = await getAllRecords(templateId);
+  const completed = records.filter((r) => r.status === 'completed');
+  return filterByTimeRange(completed, range);
 }
 
-function fmtPrice(n: number | null): string {
-  if (n === null) return '-';
-  return n.toFixed(2);
+/**
+ * 获取投资检查清单的全部记录（不限 status，投资单据的统计/明细不应依赖
+ * 用户是否手动点了"完成"按钮，sold_out 才是平仓的真实标志）
+ */
+export async function getAllInvestmentRecords(range: TimeRange): Promise<FormRecord[]> {
+  const records = await getAllRecords('investment_checklist');
+  return filterByTimeRange(records, range);
 }
 
-function pnlColor(v: number | null): string {
-  if (v === null) return '';
-  if (v > 0) return 'text-red-600';
-  if (v < 0) return 'text-green-600';
-  return 'text-gray-700';
+// ============================================================
+// 决策日志统计
+// ============================================================
+
+export interface DecisionLogStats {
+  /** 期间内重大决策数 */
+  totalDecisions: number;
+  /** 已完成的决策数 */
+  completedDecisions: number;
+  /** 后悔率（有后悔/疑虑的记录占有 post_decision 数据的记录总数比例） */
+  regretRate: number | null;
+  /** 预期准确率（result_vs_expected 为"超预期"或"符合预期"的占比） */
+  predictionAccuracy: number | null;
+  /** 已确认排除的认知偏见（勾选=确认无此偏见，top 3） */
+  topBiases: { name: string; count: number }[];
+  /** 改进焦点（最近一条记录的 improvement_plan） */
+  improvementFocus: string | null;
+  /** 决策类型分布 */
+  decisionTypes: { name: string; count: number }[];
 }
 
-function timeframeColor(judge: string): string {
-  if (judge === '符合预期') return 'text-green-700 bg-green-50';
-  if (judge === '低于预期') return 'text-amber-700 bg-amber-50';
-  if (judge === '高于预期') return 'text-blue-700 bg-blue-50';
-  return '';
-}
+export function calcDecisionLogStats(records: FormRecord[]): DecisionLogStats {
+  const completedRecords = records.filter((r) => r.status === 'completed');
 
-export default function InvestmentStats({ timeRange }: Props) {
-  const [stats, setStats] = useState<InvestmentStatsType | null>(null);
-  const [details, setDetails] = useState<TradeDetail[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      const records = await getFilteredRecords('investment_checklist', timeRange);
-      if (!cancelled) {
-        setStats(calcInvestmentStats(records));
-        setDetails(calcTradeDetails(records));
-        setLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [timeRange]);
-
-  if (loading) {
-    return <div className="text-sm text-gray-400 py-8 text-center">加载中...</div>;
-  }
-
-  if (!stats || stats.totalTrades === 0) {
-    return (
-      <div className="text-center py-8 text-gray-400">
-        <p className="text-lg mb-1">✅</p>
-        <p className="text-sm">暂无投资记录</p>
-        <p className="text-xs mt-1">使用投资检查清单记录交易，自动统计胜率和风险回报比</p>
-      </div>
-    );
-  }
-
-  const closedDetails = details.filter((d) => d.status === 'closed');
-
-  const summaryRows: { label: string; value: string; valueClass?: string; note: string }[] = [
-    { label: '投资单据', value: String(stats.totalTrades), note: `卖出 ${stats.totalSellBatches} 笔` },
-    { label: '已平仓', value: String(stats.closedTrades), note: `平均持有 ${stats.avgHoldDays !== null ? `${stats.avgHoldDays} 天` : '-'}` },
-    { label: '胜率', value: stats.winRate !== null ? `${stats.winRate}%` : '-', valueClass: stats.winRate !== null && stats.winRate >= 50 ? 'text-green-700' : 'text-red-700', note: '盈利单据占比' },
-    { label: '风险回报比', value: stats.avgRiskReward !== null ? `${stats.avgRiskReward}:1` : '-', note: '平均值' },
-    { label: '累计盈亏', value: fmtMoney(stats.totalProfitAmount), valueClass: pnlColor(stats.totalProfitAmount), note: '已实现' },
-    { label: '平均盈亏', value: stats.avgProfitPercent !== null ? `${fmtMoney(stats.avgProfitPercent)}%` : '-', valueClass: pnlColor(stats.avgProfitPercent), note: '已平仓' },
+  // 后悔率：有 regret_or_doubt 非空 / 有 post_decision section 任一字段有数据的记录
+  const postDecisionFields = [
+    'execution_status', 'unexpected_events', 'immediate_feedback',
+    'emotion_change', 'regret_or_doubt', 'self_awareness',
+    'positive_signals', 'warning_signals', 'needs_adjustment', 'adjustment_plan',
   ];
 
-  return (
-    <div className="space-y-5">
-      {/* 总体指标 */}
-      <div className="overflow-x-auto bg-white border border-gray-200 rounded-lg">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 text-left text-gray-500">
-              <th className="px-4 py-2 font-medium">指标</th>
-              <th className="px-4 py-2 font-medium">数值</th>
-              <th className="px-4 py-2 font-medium">说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            {summaryRows.map((row) => (
-              <tr key={row.label} className="border-t border-gray-100">
-                <td className="px-4 py-2 text-gray-600">{row.label}</td>
-                <td className={`px-4 py-2 font-semibold ${row.valueClass || 'text-gray-900'}`}>{row.value}</td>
-                <td className="px-4 py-2 text-gray-400">{row.note}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 逐笔交易明细（仅已平仓） */}
-      {closedDetails.length > 0 && (
-        <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-2">📋 逐笔交易明细（已平仓）</h4>
-          <div className="space-y-3">
-            {closedDetails.map((d) => (
-              <div key={d.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                {/* 投资周期汇总行 */}
-                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-                  <span className="font-semibold text-gray-900 text-sm">{d.code}</span>
-                  <span className="text-gray-500">买入 <b className="text-gray-700">{fmtPrice(d.buyPrice)}</b></span>
-                  <span className="text-gray-500">卖出 <b className="text-gray-700">{fmtPrice(d.sellPrice)}</b></span>
-                  <span className={`font-medium ${pnlColor(d.pnlPercent)}`}>
-                    {d.pnlPercent !== null ? `${d.pnlPercent > 0 ? '+' : ''}${d.pnlPercent}%` : '-'}
-                  </span>
-                  <span className={pnlColor(d.pnlAmount)}>
-                    {d.pnlAmount !== null ? fmtMoney(d.pnlAmount) : ''}
-                  </span>
-                  <span className="text-gray-500">持有 <b className="text-gray-700">{d.holdDays !== null ? `${d.holdDays}天` : '-'}</b></span>
-                  {d.riskReward && <span className="text-gray-500">风险回报比 <b className="text-gray-700">{d.riskReward}</b></span>}
-                  {d.expectedTimeframe && (
-                    <span className="text-gray-500">
-                      预期 <b className="text-gray-700">{d.expectedTimeframe}</b>
-                      {d.timeframeJudge && (
-                        <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${timeframeColor(d.timeframeJudge)}`}>
-                          {d.timeframeJudge}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </div>
-
-                {/* 逐笔买入/卖出明细（按时间排序） */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs min-w-[680px]">
-                    <thead>
-                      <tr className="text-left text-gray-400">
-                        <th className="px-3 py-1.5 font-medium">类型</th>
-                        <th className="px-3 py-1.5 font-medium">日期</th>
-                        <th className="px-3 py-1.5 font-medium">价格</th>
-                        <th className="px-3 py-1.5 font-medium">数量</th>
-                        <th className="px-3 py-1.5 font-medium">情绪</th>
-                        <th className="px-3 py-1.5 font-medium">信心</th>
-                        <th className="px-3 py-1.5 font-medium">策略</th>
-                        <th className="px-3 py-1.5 font-medium">原因</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {d.lots.map((lot, i) => (
-                        <tr key={i} className="border-t border-gray-100">
-                          <td className="px-3 py-1.5">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              lot.type === 'buy' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'
-                            }`}>
-                              {lot.type === 'buy' ? '买入' : '卖出'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-gray-600">{lot.date || '-'}</td>
-                          <td className="px-3 py-1.5 text-gray-600">{lot.price !== null ? fmtPrice(lot.price) : '-'}</td>
-                          <td className="px-3 py-1.5 text-gray-600">{lot.qty !== null ? lot.qty : '-'}</td>
-                          <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{lot.emotion || '-'}</td>
-                          <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{lot.confidence || '-'}</td>
-                          <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{lot.strategy || '-'}</td>
-                          <td className="px-3 py-1.5 text-gray-500 truncate max-w-[160px]">{lot.reason || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+  const recordsWithPostDecision = completedRecords.filter((r) =>
+    postDecisionFields.some((f) => {
+      const val = r.data[f];
+      return val !== undefined && val !== null && String(val).trim() !== '';
+    })
   );
+
+  const recordsWithRegret = recordsWithPostDecision.filter((r) => {
+    const val = r.data['regret_or_doubt'];
+    return val !== undefined && val !== null && String(val).trim() !== '';
+  });
+
+  const regretRate = recordsWithPostDecision.length > 0
+    ? Math.round((recordsWithRegret.length / recordsWithPostDecision.length) * 100)
+    : null;
+
+  // 预期准确率
+  const recordsWithResult = completedRecords.filter((r) => {
+    const val = r.data['result_vs_expected'];
+    return val !== undefined && val !== null && String(val).trim() !== '';
+  });
+
+  const accurateRecords = recordsWithResult.filter((r) => {
+    const val = String(r.data['result_vs_expected']);
+    return val === '超预期' || val === '符合预期';
+  });
+
+  const predictionAccuracy = recordsWithResult.length > 0
+    ? Math.round((accurateRecords.length / recordsWithResult.length) * 100)
+    : null;
+
+  // 主要认知偏差
+  const biasCount: Record<string, number> = {};
+  completedRecords.forEach((r) => {
+    const biases = r.data['cognitive_biases'];
+    if (Array.isArray(biases)) {
+      biases.forEach((b: unknown) => {
+        const name = String(b);
+        biasCount[name] = (biasCount[name] || 0) + 1;
+      });
+    }
+  });
+  const topBiases = Object.entries(biasCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3);
+
+  // 改进焦点：最近一条有 improvement_plan 的记录
+  const sortedRecords = [...completedRecords].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  const latestWithPlan = sortedRecords.find((r) => {
+    const val = r.data['improvement_plan'];
+    return val !== undefined && val !== null && String(val).trim() !== '';
+  });
+  const improvementFocus = latestWithPlan
+    ? String(latestWithPlan.data['improvement_plan'])
+    : null;
+
+  // 决策类型分布
+  const typeCount: Record<string, number> = {};
+  records.forEach((r) => {
+    const t = r.data['decision_type'];
+    if (t && String(t).trim()) {
+      const name = String(t);
+      typeCount[name] = (typeCount[name] || 0) + 1;
+    }
+  });
+  const decisionTypes = Object.entries(typeCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalDecisions: records.length,
+    completedDecisions: completedRecords.length,
+    regretRate,
+    predictionAccuracy,
+    topBiases,
+    improvementFocus,
+    decisionTypes,
+  };
+}
+
+// ============================================================
+// 日复盘统计
+// ============================================================
+
+export interface DailyReviewStats {
+  /** 期间内复盘天数 */
+  totalDays: number;
+  /** 连续天数（从最近一天向前） */
+  streakDays: number;
+  /** 情绪分布 */
+  moodDistribution: { name: string; count: number }[];
+  /** 精力分布 */
+  energyDistribution: { name: string; count: number }[];
+}
+
+export function calcDailyReviewStats(records: FormRecord[]): DailyReviewStats {
+  const completedRecords = records.filter((r) => r.status === 'completed');
+
+  // 获取所有唯一日期
+  const dates = completedRecords
+    .map((r) => {
+      const d = r.data['daily_date'];
+      return d ? String(d) : r.createdAt.slice(0, 10);
+    })
+    .filter(Boolean);
+
+  const uniqueDates = [...new Set(dates)].sort().reverse();
+
+  // 计算连续天数
+  let streakDays = 0;
+  if (uniqueDates.length > 0) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let checkDate = today;
+
+    for (const dateStr of uniqueDates) {
+      const d = new Date(dateStr);
+      d.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((checkDate.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 1) {
+        streakDays++;
+        checkDate = d;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // 情绪分布
+  const moodCount: Record<string, number> = {};
+  completedRecords.forEach((r) => {
+    const mood = r.data['daily_mood'];
+    if (mood && String(mood).trim()) {
+      const name = String(mood);
+      moodCount[name] = (moodCount[name] || 0) + 1;
+    }
+  });
+  const moodDistribution = Object.entries(moodCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // 精力分布
+  const energyCount: Record<string, number> = {};
+  completedRecords.forEach((r) => {
+    const energy = r.data['daily_energy'];
+    if (energy && String(energy).trim()) {
+      const name = String(energy);
+      energyCount[name] = (energyCount[name] || 0) + 1;
+    }
+  });
+  const energyDistribution = Object.entries(energyCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalDays: uniqueDates.length,
+    streakDays,
+    moodDistribution,
+    energyDistribution,
+  };
+}
+
+// ============================================================
+// 周复盘统计
+// ============================================================
+
+export interface WeeklyReviewStats {
+  /** 期间内完成周数 */
+  totalWeeks: number;
+  /** 平均目标达成率 */
+  avgGoalCompletion: number | null;
+  /** 目标完成数 / 目标总数 */
+  goalsCompleted: number;
+  goalsTotal: number;
+}
+
+export function calcWeeklyReviewStats(records: FormRecord[]): WeeklyReviewStats {
+  const completedRecords = records.filter((r) => r.status === 'completed');
+
+  let goalsCompleted = 0;
+  let goalsTotal = 0;
+  let totalProgress = 0;
+  let progressCount = 0;
+
+  completedRecords.forEach((r) => {
+    // 检查 goal1~3
+    for (let i = 1; i <= 3; i++) {
+      const goalField = r.data[`goal${i}`];
+      if (goalField && String(goalField).trim()) {
+        goalsTotal++;
+        const completed = r.data[`goal${i}_completed`];
+        if (completed && (completed === true || (Array.isArray(completed) && completed.length > 0))) {
+          goalsCompleted++;
+        }
+        const progress = r.data[`goal${i}_progress`];
+        if (progress !== undefined && progress !== null) {
+          const num = Number(progress);
+          if (!isNaN(num)) {
+            totalProgress += num;
+            progressCount++;
+          }
+        }
+      }
+    }
+  });
+
+  const avgGoalCompletion = progressCount > 0
+    ? Math.round(totalProgress / progressCount)
+    : null;
+
+  return {
+    totalWeeks: completedRecords.length,
+    avgGoalCompletion,
+    goalsCompleted,
+    goalsTotal,
+  };
+}
+
+// ============================================================
+// 投资检查清单统计
+// ============================================================
+
+/** 数值转换（空值/非法 → undefined） */
+function toNum(v: unknown): number | undefined {
+  if (v === undefined || v === null || String(v).trim() === '') return undefined;
+  const n = parseFloat(String(v));
+  return isNaN(n) ? undefined : n;
+}
+
+/** 读取一条投资单据的卖出批次（合并单据优先 merged_sell_lots，否则用顶层卖出字段） */
+interface SellBatchLike {
+  date?: string;
+  price?: string | number;
+  qty?: string | number;
+  reason?: string;
+}
+
+function readSellBatches(r: FormRecord): SellBatchLike[] {
+  const merged = r.data['merged_sell_lots'];
+  if (Array.isArray(merged) && merged.length > 0) return merged as unknown as SellBatchLike[];
+  // 兼容未合并的单笔记录：顶层卖出字段视为一笔批次
+  const sellPrice = r.data['sell_exit_price'];
+  if (sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '') {
+    return [{
+      date: r.data['sell_date'] as string | undefined,
+      price: sellPrice as string | number | undefined,
+      qty: r.data['sell_quantity'] as string | number | undefined,
+    }];
+  }
+  return [];
+}
+
+/** 判断单据是否已清仓（已全部卖出）：顶层卖出字段恢复（sold_out 时）或标记 */
+function isClosedRecord(r: FormRecord): boolean {
+  if (r.data['sold_out'] === true) return true;
+  const sellPrice = r.data['sell_exit_price'];
+  return sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '';
+}
+
+export interface InvestmentStats {
+  /** 投资单据总数（含持仓中） */
+  totalTrades: number;
+  /** 卖出批次总数（合并单据按批次计，避免重复计数） */
+  totalSellBatches: number;
+  /** 已清仓单据数（全部卖出） */
+  closedTrades: number;
+  /** 胜率（盈利单据 / 已清仓单据） */
+  winRate: number | null;
+  /** 平均风险回报比 */
+  avgRiskReward: number | null;
+  /** 平均持有天数（已清仓单据，最后卖出日 − 买入日） */
+  avgHoldDays: number | null;
+  /** 累计已实现盈亏金额（按单据各自币种加总；跨币种仅供参考） */
+  totalProfitAmount: number | null;
+  /** 平均盈亏百分比（已清仓单据） */
+  avgProfitPercent: number | null;
+  /** 盈亏分布 */
+  profitDistribution: { name: string; count: number }[];
+}
+
+export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
+  let totalSellBatches = 0;
+  const closed: { pnlPercent: number | null; holdDays: number | null }[] = [];
+  let totalProfitAmount = 0;
+  let profitAmountValid = true;
+
+  records.forEach((r) => {
+    const batches = readSellBatches(r);
+    totalSellBatches += batches.length;
+    if (batches.length === 0) return;
+
+    const buyWeighted = toNum(r.data['buy_price']); // 加权买入价（合并后）
+    const closedRec = isClosedRecord(r);
+
+    // 已实现盈亏（含部分卖出的已卖部分）：Σ qty × (批次价 − 加权买入价)
+    if (buyWeighted !== undefined) {
+      let profit = 0;
+      batches.forEach((b) => {
+        const p = toNum(b.price);
+        const q = toNum(b.qty);
+        if (p !== undefined && q !== undefined) profit += q * (p - buyWeighted);
+      });
+      totalProfitAmount += profit;
+    } else {
+      profitAmountValid = false;
+    }
+
+    if (closedRec) {
+      // 加权卖出价
+      let sellQty = 0;
+      let sellCost = 0;
+      batches.forEach((b) => {
+        const p = toNum(b.price);
+        const q = toNum(b.qty);
+        if (p !== undefined && q !== undefined && q > 0) {
+          sellCost += p * q;
+          sellQty += q;
+        }
+      });
+      const sellWeighted = sellQty > 0 ? sellCost / sellQty : undefined;
+      const pnlPercent = buyWeighted !== undefined && sellWeighted !== undefined && buyWeighted > 0
+        ? ((sellWeighted - buyWeighted) / buyWeighted) * 100
+        : null;
+
+      // 持有天数：最后卖出日 − 买入日（卖出批次均未填日期时无法计算，保持 null，不回退到买入日）
+      let holdDays: number | null = null;
+      const buyDate = (r.data['buy_date'] as string) || undefined;
+      const lastSellDate = batches
+        .map((b) => (b.date as string) || '')
+        .filter((d) => !!d)
+        .sort()
+        .pop();
+      if (buyDate && lastSellDate) {
+        const start = new Date(buyDate);
+        const end = new Date(lastSellDate);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          holdDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        }
+      }
+
+      closed.push({ pnlPercent, holdDays });
+    }
+  });
+
+  const closedTrades = closed.length;
+  // 缺失买入/卖出价格数据（pnlPercent 为 null）的单据不计入胜率与平均盈亏，避免被误当作"盈亏 0%"
+  const validPnl = closed.filter((c): c is { pnlPercent: number; holdDays: number | null } => c.pnlPercent !== null);
+  const winRecords = validPnl.filter((c) => c.pnlPercent > 0).length;
+  const winRate = validPnl.length > 0 ? Math.round((winRecords / validPnl.length) * 100) : null;
+
+  const avgProfitPercent = validPnl.length > 0
+    ? Math.round((validPnl.reduce((s, c) => s + c.pnlPercent, 0) / validPnl.length) * 100) / 100
+    : null;
+
+  const holdDayValues = closed.map((c) => c.holdDays).filter((d): d is number => d !== null);
+  const avgHoldDays = holdDayValues.length > 0
+    ? Math.round(holdDayValues.reduce((a, b) => a + b, 0) / holdDayValues.length)
+    : null;
+
+  // 平均风险回报比
+  const rrValues: number[] = [];
+  records.forEach((r) => {
+    const rr = r.data['buy_risk_reward'];
+    if (rr && String(rr).includes(':')) {
+      const num = parseFloat(String(rr));
+      if (!isNaN(num)) rrValues.push(num);
+    }
+  });
+  const avgRiskReward = rrValues.length > 0
+    ? Math.round((rrValues.reduce((a, b) => a + b, 0) / rrValues.length) * 100) / 100
+    : null;
+
+  // 盈亏分布（已清仓单据按 sell_profit_result 或盈亏方向）
+  const profitCount: Record<string, number> = {};
+  records.forEach((r) => {
+    if (!isClosedRecord(r)) return;
+    const result = r.data['sell_profit_result'];
+    const name = result && String(result).trim() ? String(result) : undefined;
+    if (name) {
+      profitCount[name] = (profitCount[name] || 0) + 1;
+    }
+  });
+  const profitDistribution = Object.entries(profitCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalTrades: records.length,
+    totalSellBatches,
+    closedTrades,
+    winRate,
+    avgRiskReward,
+    avgHoldDays,
+    totalProfitAmount: profitAmountValid ? Math.round(totalProfitAmount * 100) / 100 : null,
+    avgProfitPercent,
+    profitDistribution,
+  };
+}
+
+/** 单笔买入/卖出明细行 */
+export interface TradeLotDetail {
+  type: 'buy' | 'sell';
+  date: string;
+  price: number | null;
+  qty: number | null;
+  emotion: string;
+  confidence: string;
+  strategy: string;
+  reason: string;
+}
+
+/** 一个投资周期（合并单据）的完整交易明细 */
+export interface TradeDetail {
+  id: string;
+  code: string;
+  /** 加权买入价 */
+  buyPrice: number | null;
+  /** 加权卖出价 */
+  sellPrice: number | null;
+  pnlPercent: number | null;
+  pnlAmount: number | null;
+  holdDays: number | null;
+  riskReward: string;
+  /** 预期持有周期 vs 实际：'符合预期' | '高于预期' | '低于预期' | '' */
+  timeframeJudge: string;
+  expectedTimeframe: string;
+  /** 按时间排序的逐笔买入/卖出明细 */
+  lots: TradeLotDetail[];
+  status: 'holding' | 'partial' | 'closed';
+}
+
+/** 预期持有周期选项对应的天数范围中值（用于与实际持有天数比较） */
+function timeframeToDays(tf: string): { min: number; max: number } | null {
+  switch (tf) {
+    case '1周内': return { min: 0, max: 7 };
+    case '1-4周': return { min: 7, max: 28 };
+    case '1-3个月': return { min: 28, max: 90 };
+    case '3-12个月': return { min: 90, max: 365 };
+    case '1年以上': return { min: 365, max: 1095 };
+    case '3年以上': return { min: 1095, max: Infinity };
+    default: return null;
+  }
+}
+
+export function calcTradeDetails(records: FormRecord[]): TradeDetail[] {
+  return records.map((r) => {
+    const code = String(r.data['buy_company_name'] ?? '').trim();
+    const buyPrice = toNum(r.data['buy_price']) ?? null;
+    const closed = isClosedRecord(r);
+    const batches = readSellBatches(r);
+
+    let sellPrice: number | null = null;
+    if (batches.length > 0) {
+      let sellQty = 0, sellCost = 0;
+      batches.forEach((b) => {
+        const p = toNum(b.price);
+        const q = toNum(b.qty);
+        if (p !== undefined && q !== undefined && q > 0) { sellCost += p * q; sellQty += q; }
+      });
+      if (sellQty > 0) sellPrice = sellCost / sellQty;
+    }
+
+    const totalBuyQty = toNum(r.data['merged_total_qty']) ?? toNum(r.data['buy_quantity']) ?? 0;
+    const pnlPercent = buyPrice !== null && sellPrice !== null && buyPrice > 0
+      ? Math.round(((sellPrice - buyPrice) / buyPrice) * 10000) / 100
+      : null;
+    const pnlAmount = buyPrice !== null && sellPrice !== null && totalBuyQty > 0
+      ? Math.round((sellPrice - buyPrice) * totalBuyQty * 100) / 100
+      : null;
+
+    // 逐笔买入明细
+    const buyLots: TradeLotDetail[] = [];
+    const mergedBuyLots = Array.isArray(r.data['merged_buy_lots']) ? (r.data['merged_buy_lots'] as Record<string, unknown>[]) : [];
+    const snapshots = Array.isArray(r.data['merged_snapshots']) ? (r.data['merged_snapshots'] as { recordId: string; data: Record<string, unknown> }[]) : [];
+
+    if (mergedBuyLots.length > 0) {
+      mergedBuyLots.forEach((lot, i) => {
+        // 尝试从 snapshots 里找对应买入批次的定性字段（按顺序对应：第 0 笔是当前记录，后续是被吸收记录）
+        let emotion = '', confidence = '', strategy = '';
+        if (i === 0) {
+          emotion = String(r.data['buy_emotion_state'] ?? '');
+          confidence = String(r.data['buy_confidence'] ?? '');
+          strategy = String(r.data['buy_strategy_tag'] ?? '');
+        } else if (snapshots[i - 1]) {
+          const sd = snapshots[i - 1].data;
+          emotion = String(sd['buy_emotion_state'] ?? '');
+          confidence = String(sd['buy_confidence'] ?? '');
+          strategy = String(sd['buy_strategy_tag'] ?? '');
+        }
+        buyLots.push({
+          type: 'buy',
+          date: String(lot.date ?? ''),
+          price: toNum(lot.price) ?? null,
+          qty: toNum(lot.qty) ?? null,
+          emotion,
+          confidence,
+          strategy,
+          reason: '',
+        });
+      });
+    } else {
+      buyLots.push({
+        type: 'buy',
+        date: String(r.data['buy_date'] ?? ''),
+        price: buyPrice,
+        qty: toNum(r.data['buy_quantity']) ?? null,
+        emotion: String(r.data['buy_emotion_state'] ?? ''),
+        confidence: String(r.data['buy_confidence'] ?? ''),
+        strategy: String(r.data['buy_strategy_tag'] ?? ''),
+        reason: '',
+      });
+    }
+
+    // 逐笔卖出明细
+    const sellLots: TradeLotDetail[] = batches.map((b) => ({
+      type: 'sell' as const,
+      date: String(b.date ?? ''),
+      price: toNum(b.price) ?? null,
+      qty: toNum(b.qty) ?? null,
+      emotion: String(r.data['sell_emotion_state'] ?? ''),
+      confidence: '',
+      strategy: '',
+      reason: String(b.reason ?? ''),
+    }));
+
+    // 按时间排序合并
+    const lots = [...buyLots, ...sellLots].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // 持有天数
+    let holdDays: number | null = null;
+    const firstBuyDate = buyLots.map((l) => l.date).filter(Boolean).sort()[0];
+    const lastSellDate = sellLots.map((l) => l.date).filter(Boolean).sort().pop();
+    if (firstBuyDate && lastSellDate) {
+      const s = new Date(firstBuyDate), e = new Date(lastSellDate);
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime())) holdDays = Math.round((e.getTime() - s.getTime()) / 86400000);
+    }
+
+    // 预期持有周期 vs 实际
+    const expectedTimeframe = String(r.data['buy_timeframe'] ?? '').trim();
+    let timeframeJudge = '';
+    if (holdDays !== null && expectedTimeframe) {
+      const range = timeframeToDays(expectedTimeframe);
+      if (range) {
+        if (holdDays < range.min) timeframeJudge = '低于预期';
+        else if (holdDays > range.max) timeframeJudge = '高于预期';
+        else timeframeJudge = '符合预期';
+      }
+    }
+
+    const rr = String(r.data['buy_risk_reward'] ?? '').trim();
+
+    let status: 'holding' | 'partial' | 'closed' = 'holding';
+    if (closed) status = 'closed';
+    else if (batches.length > 0) status = 'partial';
+
+    return { id: r.id, code, buyPrice, sellPrice, pnlPercent, pnlAmount, holdDays, riskReward: rr, timeframeJudge, expectedTimeframe, lots, status };
+  });
+}
+
+// ============================================================
+// 情绪觉察统计
+// ============================================================
+
+export interface EmotionStats {
+  /** 总记录数 */
+  totalRecords: number;
+  /** 情绪分布 */
+  emotionDistribution: { name: string; count: number }[];
+  /** 触发因素（从 emotion_trigger 中的记录数） */
+  triggerCount: number;
+  /** 调节效果分布 */
+  regulationEffectiveness: { name: string; count: number }[];
+}
+
+export function calcEmotionStats(records: FormRecord[]): EmotionStats {
+  const completedRecords = records.filter((r) => r.status === 'completed');
+
+  // 情绪分布
+  const emotionCount: Record<string, number> = {};
+  completedRecords.forEach((r) => {
+    const emotion = r.data['emotion_dominant'];
+    if (emotion && String(emotion).trim()) {
+      const name = String(emotion);
+      emotionCount[name] = (emotionCount[name] || 0) + 1;
+    }
+  });
+  const emotionDistribution = Object.entries(emotionCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // 触发因素记录数
+  const triggerCount = completedRecords.filter((r) => {
+    const val = r.data['emotion_trigger'];
+    return val !== undefined && val !== null && String(val).trim() !== '';
+  }).length;
+
+  // 调节效果分布
+  const effectCount: Record<string, number> = {};
+  completedRecords.forEach((r) => {
+    const effect = r.data['regulate_effectiveness'];
+    if (effect && String(effect).trim()) {
+      const name = String(effect);
+      effectCount[name] = (effectCount[name] || 0) + 1;
+    }
+  });
+  const regulationEffectiveness = Object.entries(effectCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalRecords: completedRecords.length,
+    emotionDistribution,
+    triggerCount,
+    regulationEffectiveness,
+  };
 }
