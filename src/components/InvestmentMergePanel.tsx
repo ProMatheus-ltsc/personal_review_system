@@ -20,6 +20,15 @@ interface MergeLot {
 
 export type { MergeLot };
 
+/** 被合并（吸收）单据的完整快照，用于回看其填写的买入细节（不止是加权价/数量） */
+interface MergedSnapshot {
+  recordId: string;
+  title: string;
+  data: Record<string, unknown>;
+}
+
+export type { MergedSnapshot };
+
 interface InvestmentMergePanelProps {
   stockCode: string;
   mergedBuyLots?: MergeLot[];
@@ -38,6 +47,8 @@ interface InvestmentMergePanelProps {
   onUndoLastSell?: () => void;
   /** 当前单据尚未合并时显示的空态文案 */
   emptyText?: string;
+  /** 被合并（吸收）的历史买入单据完整快照（含核心买入逻辑/止损/目标价等细节） */
+  mergedSnapshots?: MergedSnapshot[];
 }
 
 const statusColor: Record<string, string> = {
@@ -78,10 +89,12 @@ export default function InvestmentMergePanel({
   reviewed,
   onUndoLastSell,
   emptyText,
+  mergedSnapshots,
 }: InvestmentMergePanelProps) {
   if (!stockCode) return null;
   const hasBuy = Array.isArray(mergedBuyLots) && mergedBuyLots.length > 0;
   const hasSell = Array.isArray(mergedSellLots) && mergedSellLots.length > 0;
+  const hasSnapshots = Array.isArray(mergedSnapshots) && mergedSnapshots.length > 0;
   if (!hasBuy && !hasSell) {
     if (!emptyText) return null;
     return (
@@ -185,6 +198,49 @@ export default function InvestmentMergePanel({
                     <td className="px-3 py-1.5 text-gray-600">{l.date || '-'}</td>
                     <td className="px-3 py-1.5 text-gray-600">{fmt(l.price)}</td>
                     <td className="px-3 py-1.5 text-gray-600">{fmt(l.qty, 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 被合并的历史买入单据详情（核心买入逻辑/止损价/目标价/情绪等定性细节，不止是加权价与数量） */}
+      {hasSnapshots && (
+        <div className="mb-3">
+          <div className="mb-2 text-xs text-gray-500">
+            📋 已合并 {(mergedSnapshots as MergedSnapshot[]).length} 份历史买入单据的完整填写细节
+          </div>
+          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+            <table className="w-full text-xs min-w-[720px]">
+              <thead>
+                <tr className="bg-gray-50 text-left text-gray-500">
+                  <th className="px-3 py-2 font-medium">记录标题</th>
+                  <th className="px-3 py-2 font-medium">买入日期</th>
+                  <th className="px-3 py-2 font-medium">买入价</th>
+                  <th className="px-3 py-2 font-medium">数量</th>
+                  <th className="px-3 py-2 font-medium">核心买入逻辑</th>
+                  <th className="px-3 py-2 font-medium">止损价</th>
+                  <th className="px-3 py-2 font-medium">目标价</th>
+                  <th className="px-3 py-2 font-medium">买入情绪</th>
+                  <th className="px-3 py-2 font-medium">信心水平</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(mergedSnapshots as MergedSnapshot[]).map((s) => (
+                  <tr key={s.recordId} className="border-t border-gray-100 align-top">
+                    <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">{s.title || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(s.data.buy_date as string) || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(s.data.buy_price as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(s.data.buy_quantity as string | number, 0)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 max-w-[220px] truncate" title={(s.data.buy_thesis as string) || ''}>
+                      {(s.data.buy_thesis as string) || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(s.data.buy_stop_loss_price as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(s.data.buy_target_price_num as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(s.data.buy_emotion_state as string) || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(s.data.buy_confidence as string) || '-'}</td>
                   </tr>
                 ))}
               </tbody>
