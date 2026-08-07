@@ -44,6 +44,7 @@ export default function DashboardPage() {
 
   // Backup reminder state
   const [lastBackup, setLastBackup] = useState<string | null>(null);
+  const [lastBackupRecordCount, setLastBackupRecordCount] = useState<number>(0);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const [backupCheckDone, setBackupCheckDone] = useState(false);
 
@@ -51,6 +52,8 @@ export default function DashboardPage() {
     const loadSettings = async () => {
       const backupDate = await getSetting('lastBackupDate');
       setLastBackup((backupDate as string) || null);
+      const backupCount = await getSetting('lastBackupRecordCount');
+      setLastBackupRecordCount(backupCount ? Number(backupCount) : 0);
       const dismissed = await getSetting('firstVisitDismissed');
       if (!dismissed) {
         setIsFirstVisit(true);
@@ -67,9 +70,13 @@ export default function DashboardPage() {
 
   const shouldShowBackupReminder = useMemo(() => {
     if (!backupCheckDone) return false;
-    // Only show when user has 10+ records and has never exported
-    return records.length >= 10 && !lastBackup;
-  }, [records, lastBackup, backupCheckDone]);
+    if (records.length < 10) return false;
+    if (!lastBackup) return true;
+    if (records.length - lastBackupRecordCount >= 10) return true;
+    const daysSinceBackup = Math.floor((Date.now() - new Date(lastBackup).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceBackup >= 30) return true;
+    return false;
+  }, [records, lastBackup, lastBackupRecordCount, backupCheckDone]);
 
   // Streak & counts
   const { streak, weekCount, monthCount } = useMemo(() => {
@@ -81,11 +88,11 @@ export default function DashboardPage() {
     const completedRecords = records.filter((r) => r.status === 'completed');
 
     const weekCount = completedRecords.filter((r) =>
-      isWithinInterval(new Date(r.updatedAt), { start: weekStart, end: weekEnd })
+      isWithinInterval(new Date(r.createdAt), { start: weekStart, end: weekEnd })
     ).length;
 
     const monthCount = completedRecords.filter((r) => {
-      const d = new Date(r.updatedAt);
+      const d = new Date(r.createdAt);
       return d >= monthStart && d <= now;
     }).length;
 
