@@ -100,7 +100,7 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
             if (field.type === 'table' && Array.isArray(value) && field.tableColumns) {
               const columns = field.tableColumns;
               const rows = value.filter((row: Record<string, string>) =>
-                columns.some((col) => row[col.id] && row[col.id].trim() !== '')
+                columns.some((col) => String(row[col.id] ?? '').trim() !== '')
               );
               lines.push(`#### ${field.label}`);
               lines.push('');
