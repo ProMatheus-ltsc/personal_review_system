@@ -18,7 +18,7 @@ import PasswordInput from '@/components/PasswordInput';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { isFirstTime, loading, login, setPassword, isAuthenticated } = useAuth();
+  const { isFirstTime, loading, login, setPassword, isAuthenticated, resetPassword } = useAuth();
 
   const [password, setPasswordValue] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -26,6 +26,7 @@ export default function LoginPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -182,6 +183,25 @@ export default function LoginPage() {
             >
               {submitting ? '验证中...' : '解锁'}
             </button>
+
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                disabled={resetting}
+                onClick={async () => {
+                  const confirmed = window.confirm(
+                    '将清除密码但保留所有复盘记录。\n确认后需重新设置密码。\n\n确定要重置密码吗？'
+                  );
+                  if (!confirmed) return;
+                  setResetting(true);
+                  await resetPassword();
+                  setResetting(false);
+                }}
+                className="text-sm text-gray-400 hover:text-indigo-600 transition-colors"
+              >
+                {resetting ? '重置中...' : '忘记密码？'}
+              </button>
+            </div>
           </form>
         )}
       </div>
