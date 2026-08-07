@@ -465,6 +465,166 @@ export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
   };
 }
 
+/** 单笔买入/卖出明细行 */
+export interface TradeLotDetail {
+  type: 'buy' | 'sell';
+  date: string;
+  price: number | null;
+  qty: number | null;
+  emotion: string;
+  confidence: string;
+  strategy: string;
+  reason: string;
+}
+
+/** 一个投资周期（合并单据）的完整交易明细 */
+export interface TradeDetail {
+  id: string;
+  code: string;
+  /** 加权买入价 */
+  buyPrice: number | null;
+  /** 加权卖出价 */
+  sellPrice: number | null;
+  pnlPercent: number | null;
+  pnlAmount: number | null;
+  holdDays: number | null;
+  riskReward: string;
+  /** 预期持有周期 vs 实际：'符合预期' | '高于预期' | '低于预期' | '' */
+  timeframeJudge: string;
+  expectedTimeframe: string;
+  /** 按时间排序的逐笔买入/卖出明细 */
+  lots: TradeLotDetail[];
+  status: 'holding' | 'partial' | 'closed';
+}
+
+/** 预期持有周期选项对应的天数范围中值（用于与实际持有天数比较） */
+function timeframeToDays(tf: string): { min: number; max: number } | null {
+  switch (tf) {
+    case '1周内': return { min: 0, max: 7 };
+    case '1-4周': return { min: 7, max: 28 };
+    case '1-3个月': return { min: 28, max: 90 };
+    case '3-12个月': return { min: 90, max: 365 };
+    case '1年以上': return { min: 365, max: 1095 };
+    case '3年以上': return { min: 1095, max: Infinity };
+    default: return null;
+  }
+}
+
+export function calcTradeDetails(records: FormRecord[]): TradeDetail[] {
+  return records.map((r) => {
+    const code = String(r.data['buy_company_name'] ?? '').trim();
+    const buyPrice = toNum(r.data['buy_price']) ?? null;
+    const closed = isClosedRecord(r);
+    const batches = readSellBatches(r);
+
+    let sellPrice: number | null = null;
+    if (batches.length > 0) {
+      let sellQty = 0, sellCost = 0;
+      batches.forEach((b) => {
+        const p = toNum(b.price);
+        const q = toNum(b.qty);
+        if (p !== undefined && q !== undefined && q > 0) { sellCost += p * q; sellQty += q; }
+      });
+      if (sellQty > 0) sellPrice = sellCost / sellQty;
+    }
+
+    const totalBuyQty = toNum(r.data['merged_total_qty']) ?? toNum(r.data['buy_quantity']) ?? 0;
+    const pnlPercent = buyPrice !== null && sellPrice !== null && buyPrice > 0
+      ? Math.round(((sellPrice - buyPrice) / buyPrice) * 10000) / 100
+      : null;
+    const pnlAmount = buyPrice !== null && sellPrice !== null && totalBuyQty > 0
+      ? Math.round((sellPrice - buyPrice) * totalBuyQty * 100) / 100
+      : null;
+
+    // 逐笔买入明细
+    const buyLots: TradeLotDetail[] = [];
+    const mergedBuyLots = Array.isArray(r.data['merged_buy_lots']) ? (r.data['merged_buy_lots'] as Record<string, unknown>[]) : [];
+    const snapshots = Array.isArray(r.data['merged_snapshots']) ? (r.data['merged_snapshots'] as { recordId: string; data: Record<string, unknown> }[]) : [];
+
+    if (mergedBuyLots.length > 0) {
+      mergedBuyLots.forEach((lot, i) => {
+        // 尝试从 snapshots 里找对应买入批次的定性字段（按顺序对应：第 0 笔是当前记录，后续是被吸收记录）
+        let emotion = '', confidence = '', strategy = '';
+        if (i === 0) {
+          emotion = String(r.data['buy_emotion_state'] ?? '');
+          confidence = String(r.data['buy_confidence'] ?? '');
+          strategy = String(r.data['buy_strategy_tag'] ?? '');
+        } else if (snapshots[i - 1]) {
+          const sd = snapshots[i - 1].data;
+          emotion = String(sd['buy_emotion_state'] ?? '');
+          confidence = String(sd['buy_confidence'] ?? '');
+          strategy = String(sd['buy_strategy_tag'] ?? '');
+        }
+        buyLots.push({
+          type: 'buy',
+          date: String(lot.date ?? ''),
+          price: toNum(lot.price) ?? null,
+          qty: toNum(lot.qty) ?? null,
+          emotion,
+          confidence,
+          strategy,
+          reason: '',
+        });
+      });
+    } else {
+      buyLots.push({
+        type: 'buy',
+        date: String(r.data['buy_date'] ?? ''),
+        price: buyPrice,
+        qty: toNum(r.data['buy_quantity']) ?? null,
+        emotion: String(r.data['buy_emotion_state'] ?? ''),
+        confidence: String(r.data['buy_confidence'] ?? ''),
+        strategy: String(r.data['buy_strategy_tag'] ?? ''),
+        reason: '',
+      });
+    }
+
+    // 逐笔卖出明细
+    const sellLots: TradeLotDetail[] = batches.map((b) => ({
+      type: 'sell' as const,
+      date: String(b.date ?? ''),
+      price: toNum(b.price) ?? null,
+      qty: toNum(b.qty) ?? null,
+      emotion: String(r.data['sell_emotion_state'] ?? ''),
+      confidence: '',
+      strategy: '',
+      reason: String(b.reason ?? ''),
+    }));
+
+    // 按时间排序合并
+    const lots = [...buyLots, ...sellLots].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // 持有天数
+    let holdDays: number | null = null;
+    const firstBuyDate = buyLots.map((l) => l.date).filter(Boolean).sort()[0];
+    const lastSellDate = sellLots.map((l) => l.date).filter(Boolean).sort().pop();
+    if (firstBuyDate && lastSellDate) {
+      const s = new Date(firstBuyDate), e = new Date(lastSellDate);
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime())) holdDays = Math.round((e.getTime() - s.getTime()) / 86400000);
+    }
+
+    // 预期持有周期 vs 实际
+    const expectedTimeframe = String(r.data['buy_timeframe'] ?? '').trim();
+    let timeframeJudge = '';
+    if (holdDays !== null && expectedTimeframe) {
+      const range = timeframeToDays(expectedTimeframe);
+      if (range) {
+        if (holdDays < range.min) timeframeJudge = '低于预期';
+        else if (holdDays > range.max) timeframeJudge = '高于预期';
+        else timeframeJudge = '符合预期';
+      }
+    }
+
+    const rr = String(r.data['buy_risk_reward'] ?? '').trim();
+
+    let status: 'holding' | 'partial' | 'closed' = 'holding';
+    if (closed) status = 'closed';
+    else if (batches.length > 0) status = 'partial';
+
+    return { id: r.id, code, buyPrice, sellPrice, pnlPercent, pnlAmount, holdDays, riskReward: rr, timeframeJudge, expectedTimeframe, lots, status };
+  });
+}
+
 // ============================================================
 // 情绪觉察统计
 // ============================================================
