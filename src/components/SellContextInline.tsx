@@ -80,6 +80,30 @@ export default function SellContextInline({
       {pnlPercent === undefined && (
         <p className="text-[11px] text-amber-600">填写卖出价格后自动计算本笔盈亏</p>
       )}
+      {/* 卖出结果实时预览 */}
+      {remaining !== undefined && remaining > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t border-amber-200/60 text-[11px]">
+          {qty !== undefined && qty > 0 ? (
+            remaining - qty > 0 ? (
+              <span className="text-blue-600">
+                保存后剩余持仓：<b>{remaining - qty}</b> 股（部分卖出，仍可继续买入合并）
+              </span>
+            ) : remaining - qty === 0 ? (
+              <span className="text-green-700">
+                保存后将<b>全部清仓</b>，30 天后解锁复盘
+              </span>
+            ) : (
+              <span className="text-red-600">
+                卖出数量（{qty}）超过剩余持仓（{remaining}），保存时将被拦截
+              </span>
+            )
+          ) : (
+            <span className="text-amber-600">
+              卖出数量留空 = 卖出全部剩余持仓（{remaining} 股），保存后将全部清仓
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
