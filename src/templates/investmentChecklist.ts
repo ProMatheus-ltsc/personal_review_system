@@ -91,7 +91,7 @@ export const investmentChecklistTemplate: FormTemplate = {
           { value: 'USD', label: '美元(USD)' }, { value: 'CNY', label: '人民币(CNY)' },
         ], hint: '选择该笔交易使用的货币，后续价格字段将据此标注' },
         { id: 'buy_price', label: '买入价格', type: 'text', priority: 'required', placeholder: '输入买入价格', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：180.50 美元', 'CNY': '例：25.80 人民币' }, validation: NON_NEGATIVE_NUM_VALIDATION },
-        { id: 'buy_quantity', label: '买入数量/金额', type: 'text', priority: 'recommended', placeholder: '例：100股', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：100股 或 $10000', 'CNY': '例：100股 或 ¥10000' }, validation: NON_NEGATIVE_NUM_VALIDATION },
+        { id: 'buy_quantity', label: '买入数量/金额', type: 'text', priority: 'required', placeholder: '例：100股', hint: '分批买入/卖出的剩余持仓计算依赖此字段，请填写具体数量（如 100股），不要填金额', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：100股', 'CNY': '例：100股' }, validation: NON_NEGATIVE_NUM_VALIDATION },
         { id: 'buy_thesis', label: '核心买入逻辑', type: 'textarea', priority: 'required', hint: '写下买入的1-3个核心理由，卖出时回头看', placeholder: '为什么买？这是将来复盘最重要的参考' },
         { id: 'buy_stop_loss_price', label: '止损价格', type: 'text', priority: 'required', hint: '在什么价格你愿意承认错误并退出？', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '输入美元止损价', 'CNY': '输入人民币止损价' }, validation: NON_NEGATIVE_NUM_VALIDATION },
         { id: 'buy_target_price_num', label: '目标价格', type: 'text', priority: 'required', hint: '基于你的估值逻辑', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '输入美元目标价', 'CNY': '输入人民币目标价' }, validation: NON_NEGATIVE_NUM_VALIDATION },
