@@ -28,8 +28,7 @@ import PhaseIndicator from './PhaseIndicator';
 import Toast from './Toast';
 import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
-import ConfirmDialog from './ConfirmDialog';
-import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
+import InvestmentMergePanel, { type MergeLot, type MergedSnapshot } from './InvestmentMergePanel';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
 import { mergeSameCodeBuys, applySellBatch, undoLastSellBatch, PHASE_REVIEW } from '@/services/investmentMerge';
@@ -96,8 +95,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const [initialTabSet, setInitialTabSet] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [loadedFromPrevWeek, setLoadedFromPrevWeek] = useState(false);
-  /** 待确认的只读（已锁定过去阶段）section 索引，null 表示未弹窗 */
-  const [readonlyConfirmSection, setReadonlyConfirmSection] = useState<number | null>(null);
+  /** 是否已经对只读阶段回看做过一次 Toast 提示（后续不再重复弹） */
+  const [readonlyToastShown, setReadonlyToastShown] = useState(false);
   /**
    * 用户实际进入过的最高阶段索引。
    * currentPhaseIndex 会在字段填满时自动推进（用于解锁下一阶段），
@@ -139,10 +138,21 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     setValue,
     getValues,
     control,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm({
     defaultValues: computedDefaults(),
   });
+
+  // Warn user before closing/navigating away with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty && saveStatus !== 'saved') {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty, saveStatus]);
 
   // === Computed fields logic ===
   const computedFields = useMemo(() => {
@@ -385,6 +395,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           'sell_status',
           'merged_snapshots',
           'parent_position_id',
+          '_sell_batch_id',
         ] as const
       ).forEach((k) => {
         if (k in data) setValue(k, data[k], { shouldDirty: false });
@@ -412,7 +423,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           const code = String(record.data.buy_company_name ?? '').trim();
           if (code) {
             // 卖出拆分并入：填写了卖出 → 本笔卖出拆成批次立即并入当前单据
-            if (!isFieldEmpty(record.data.sell_exit_price)) {
+            // 已全部卖出（sold_out）的单据顶层卖出字段仍保留加权卖出价，
+            // 复盘阶段的后续自动保存不应再当作"新的一笔卖出"重新校验，否则会
+            // 反复触发"超过剩余持仓"的误报
+            if (!isFieldEmpty(record.data.sell_exit_price) && record.data.sold_out !== true) {
               const res = await applySellBatch(record);
               if (res?.error) {
                 showToast(res.error, 'error');
@@ -507,11 +521,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     (index: number) => {
       // Prevent navigating to a locked section
       if (isSectionLocked(index)) return;
-      // 回看多阶段模板中已完成的过去阶段：需确认只读查看
-      // （已处于只读阶段内切换则无需重复确认）
-      if (phases && isSectionReadOnly(index) && !isSectionReadOnly(activeTab)) {
-        setReadonlyConfirmSection(index);
-        return;
+      // 回看已完成的只读阶段：允许直接进入，首次时 Toast 提示一次
+      if (phases && isSectionReadOnly(index) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
+        setReadonlyToastShown(true);
+        showToast('该阶段已完成，仅供查看、无法修改', 'info');
       }
       // 进入更高阶段后，之前的阶段才锁定
       if (phases) {
@@ -521,7 +534,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       performSave('draft');
       setActiveTab(index);
     },
-    [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab, visitedMaxPhase]
+    [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
   );
 
   // Handle phase click - navigate to the first section of the selected phase
@@ -532,18 +545,17 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       if (phaseIndex > currentPhaseIndex) return;
       const firstSectionIdx = phases[phaseIndex]?.sectionIndices[0];
       if (firstSectionIdx === undefined) return;
-      // 回看已完成/锁定的阶段（含完成后的 completesRecord 阶段）：需确认只读查看
-      // （已处于只读阶段则无需重复确认）
-      if (isSectionReadOnly(firstSectionIdx) && !isSectionReadOnly(activeTab)) {
-        setReadonlyConfirmSection(firstSectionIdx);
-        return;
+      // 回看已完成的只读阶段：直接进入，首次 Toast 提示
+      if (isSectionReadOnly(firstSectionIdx) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
+        setReadonlyToastShown(true);
+        showToast('该阶段已完成，仅供查看、无法修改', 'info');
       }
       // 进入更高阶段后，之前的阶段才锁定
       if (phaseIndex > visitedMaxPhase) setVisitedMaxPhase(phaseIndex);
       performSave('draft');
       setActiveTab(firstSectionIdx);
     },
-    [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase]
+    [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
   );
 
   const handleDraftSave = async () => {
@@ -829,6 +841,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           lastSellDate={watch('last_sell_date') as string | undefined}
           reviewed={sellReviewed}
           onUndoLastSell={hasSellLots ? handleUndoLastSell : undefined}
+          mergedSnapshots={watch('merged_snapshots') as MergedSnapshot[] | undefined}
           emptyText={
             currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
               ? '📌 同代码且都在持有阶段的买入记录会自动合并进当前单据（加权买入价 + 逐笔明细）；部分卖出的剩余持仓仍可合并新买入，全部卖出后以最后卖出日期为准 30 天解锁复盘'
@@ -872,7 +885,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                {(locked || readOnly) && <span className="mr-1">🔒</span>}
+                {locked && <span className="mr-1">🔒</span>}
+                {readOnly && !locked && <span className="mr-1 opacity-70">✓</span>}
                 {section.title}
                 {hasErrors && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
               </button>
@@ -1118,30 +1132,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         </div>
       </form>
 
-      {/* 回看已锁定过去阶段的确认弹窗 */}
-      <ConfirmDialog
-        isOpen={readonlyConfirmSection !== null}
-        title="该阶段已锁定"
-        message={
-          readonlyConfirmSection !== null ? (
-            <>
-              「{template.sections[readonlyConfirmSection].title}」阶段已完成并锁定，
-              进入后<strong>只能查看，无法修改</strong>。确认只查看、不做任何修改吗？
-            </>
-          ) : (
-            ''
-          )
-        }
-        confirmText="仅查看"
-        cancelText="取消"
-        onConfirm={() => {
-          if (readonlyConfirmSection !== null) {
-            setActiveTab(readonlyConfirmSection);
-            setReadonlyConfirmSection(null);
-          }
-        }}
-        onCancel={() => setReadonlyConfirmSection(null)}
-      />
     </div>
   );
 };
