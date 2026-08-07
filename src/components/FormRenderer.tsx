@@ -631,6 +631,17 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       showToast(res.error, 'error');
     } else if (res) {
       syncMergedData(res.data);
+      // 撤销卖出后，如果不再是全部卖出状态，记录应降回 draft 以解锁卖出阶段的编辑
+      if (!res.soldOut && recordStatus === 'completed') {
+        setRecordStatus('draft');
+      }
+      // 撤销后卖出阶段需要重新编辑：把 visitedMaxPhase 降回到卖出阶段，解除"之前阶段只读"的锁定
+      if (!res.soldOut && phases) {
+        const sellingPhaseIdx = phases.findIndex((p) => p.completesRecord);
+        if (sellingPhaseIdx >= 0 && visitedMaxPhase > sellingPhaseIdx) {
+          setVisitedMaxPhase(sellingPhaseIdx);
+        }
+      }
       showToast('已撤销最近一笔卖出', 'success');
     }
   }, [buildRecord, syncMergedData, showToast]);
