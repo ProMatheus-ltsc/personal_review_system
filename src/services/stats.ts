@@ -16,7 +16,7 @@ export type TimeRange = 'month' | 'quarter' | 'all';
 function filterByTimeRange(records: FormRecord[], range: TimeRange): FormRecord[] {
   if (range === 'all') return records;
   const now = new Date();
-  const start = range === 'month' ? startOfMonth(now) : startOfMonth(subMonths(now, 2));
+  const start = range === 'month' ? startOfMonth(now) : startOfMonth(subMonths(now, 3));
   return records.filter((r) => isAfter(new Date(r.createdAt), start));
 }
 
@@ -348,7 +348,7 @@ export interface InvestmentStats {
 
 export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
   let totalSellBatches = 0;
-  const closed: { pnlPercent: number; holdDays: number | null }[] = [];
+  const closed: { pnlPercent: number | null; holdDays: number | null }[] = [];
   let totalProfitAmount = 0;
   let profitAmountValid = true;
 
@@ -388,16 +388,16 @@ export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
       const sellWeighted = sellQty > 0 ? sellCost / sellQty : undefined;
       const pnlPercent = buyWeighted !== undefined && sellWeighted !== undefined && buyWeighted > 0
         ? ((sellWeighted - buyWeighted) / buyWeighted) * 100
-        : NaN;
+        : null;
 
-      // 持有天数：最后卖出日 − 买入日
+      // 持有天数：最后卖出日 − 买入日（卖出批次均未填日期时无法计算，保持 null，不回退到买入日）
       let holdDays: number | null = null;
       const buyDate = (r.data['buy_date'] as string) || undefined;
       const lastSellDate = batches
         .map((b) => (b.date as string) || '')
         .filter((d) => !!d)
         .sort()
-        .pop() || buyDate;
+        .pop();
       if (buyDate && lastSellDate) {
         const start = new Date(buyDate);
         const end = new Date(lastSellDate);
@@ -406,19 +406,18 @@ export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
         }
       }
 
-      closed.push({
-        pnlPercent: isNaN(pnlPercent) ? 0 : pnlPercent,
-        holdDays,
-      });
+      closed.push({ pnlPercent, holdDays });
     }
   });
 
   const closedTrades = closed.length;
-  const winRecords = closed.filter((c) => c.pnlPercent > 0).length;
-  const winRate = closedTrades > 0 ? Math.round((winRecords / closedTrades) * 100) : null;
+  // 缺失买入/卖出价格数据（pnlPercent 为 null）的单据不计入胜率与平均盈亏，避免被误当作"盈亏 0%"
+  const validPnl = closed.filter((c): c is { pnlPercent: number; holdDays: number | null } => c.pnlPercent !== null);
+  const winRecords = validPnl.filter((c) => c.pnlPercent > 0).length;
+  const winRate = validPnl.length > 0 ? Math.round((winRecords / validPnl.length) * 100) : null;
 
-  const avgProfitPercent = closedTrades > 0
-    ? Math.round((closed.reduce((s, c) => s + c.pnlPercent, 0) / closedTrades) * 100) / 100
+  const avgProfitPercent = validPnl.length > 0
+    ? Math.round((validPnl.reduce((s, c) => s + c.pnlPercent, 0) / validPnl.length) * 100) / 100
     : null;
 
   const holdDayValues = closed.map((c) => c.holdDays).filter((d): d is number => d !== null);
