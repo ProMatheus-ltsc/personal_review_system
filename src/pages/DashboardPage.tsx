@@ -19,7 +19,7 @@ import TemplateCard from '@/components/TemplateCard';
 import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
 import { isFieldEmpty } from '@/utils/formValidation';
-import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, type ReviewItem } from '@/components/dashboard';
+import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, PositionOverview, type ReviewItem, type PositionItem } from '@/components/dashboard';
 
 /**
  * DashboardPage — 首页仪表盘
@@ -124,6 +124,32 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [records]);
 
+  // 当前持仓：未清仓的投资检查清单单据（未全部卖出、无顶层卖出价）
+  const positions = useMemo<PositionItem[]>(() => {
+    return records
+      .filter((r) => {
+        if (r.templateId !== 'investment_checklist') return false;
+        if (r.data.sold_out === true) return false;
+        const sellPrice = r.data.sell_exit_price;
+        if (sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '') return false;
+        const code = String(r.data.buy_company_name ?? '').trim();
+        return code !== '';
+      })
+      .map((r) => {
+        const totalQty = Number(r.data.merged_total_qty ?? r.data.buy_quantity ?? 0);
+        const sellQty = Number(r.data.merged_total_sell_qty ?? 0);
+        return {
+          recordId: r.id,
+          code: String(r.data.buy_company_name ?? '').trim(),
+          avgBuyPrice: Number(r.data.buy_price ?? 0),
+          totalQty: isNaN(totalQty) ? 0 : totalQty,
+          remainingQty: isNaN(totalQty - sellQty) ? 0 : totalQty - sellQty,
+          currency: String(r.data.buy_currency ?? 'CNY'),
+        };
+      })
+      .filter((p) => p.remainingQty > 0);
+  }, [records]);
+
   // 复盘提醒：投资检查清单按卖出日期、决策日志按完成时间，过 30 天冷静期后提醒复盘
   const { readyForReview, pendingReview } = useMemo(() => {
     const COOLDOWN_DAYS = 30;
@@ -204,6 +230,12 @@ export default function DashboardPage() {
       />
 
       <HabitStats streak={streak} weekCount={weekCount} monthCount={monthCount} />
+
+      {/* 当前持仓概览（投资检查清单） */}
+      <PositionOverview
+        positions={positions}
+        onOpen={(recordId) => navigate(`/form/investment_checklist/${recordId}`)}
+      />
 
       {/* GitHub 风格复盘热力图 */}
       <ContributionGraph records={records} />

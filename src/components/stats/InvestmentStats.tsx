@@ -1,14 +1,23 @@
 /**
  * InvestmentStats — 投资检查清单统计组件
  *
- * 展示投资记录的统计数据：总交易数、胜率、
- * 持仓检查频率等，支持按时间范围过滤。
+ * 统计口径基于「合并单据」模型：
+ * - 总交易数 = 投资单据总数（一份合并单 = 一次投资）
+ * - 卖出批次 = 逐笔卖出次数（部分卖出/分批卖出按笔计）
+ * - 已平仓 = 已全部卖出的单据（严格剩余=0）
+ * - 胜率/平均盈亏% 按已清仓单据计算（加权卖出价 vs 加权买入价）
  */
 import { useEffect, useState } from 'react';
 import { InvestmentStats as InvestmentStatsType, calcInvestmentStats, getFilteredRecords, TimeRange } from '@/services/stats';
 
 interface Props {
   timeRange: TimeRange;
+}
+
+function fmtMoney(n: number | null, digits = 2): string {
+  if (n === null) return '-';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(digits)}`;
 }
 
 export default function InvestmentStats({ timeRange }: Props) {
@@ -43,18 +52,25 @@ export default function InvestmentStats({ timeRange }: Props) {
     );
   }
 
+  const pnlColor = (v: number | null) =>
+    v === null ? '' : v > 0 ? 'text-red-600' : v < 0 ? 'text-green-600' : 'text-gray-700';
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div className="rounded-lg border p-3 bg-blue-50 border-blue-100">
-          <p className="text-xs text-gray-500 mb-1">总交易数</p>
+          <p className="text-xs text-gray-500 mb-1">投资单据</p>
           <p className="text-xl font-bold text-blue-700">{stats.totalTrades}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">记录的交易</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            合并后单据 · 卖出 {stats.totalSellBatches} 笔
+          </p>
         </div>
         <div className="rounded-lg border p-3 bg-emerald-50 border-emerald-100">
           <p className="text-xs text-gray-500 mb-1">已平仓</p>
           <p className="text-xl font-bold text-emerald-700">{stats.closedTrades}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">已有卖出记录</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            平均持有 {stats.avgHoldDays !== null ? `${stats.avgHoldDays} 天` : '-'}
+          </p>
         </div>
         <div className={`rounded-lg border p-3 ${
           stats.winRate !== null && stats.winRate >= 50
@@ -67,7 +83,7 @@ export default function InvestmentStats({ timeRange }: Props) {
           }`}>
             {stats.winRate !== null ? `${stats.winRate}%` : '-'}
           </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">盈利交易占比</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">盈利单据占比</p>
         </div>
         <div className="rounded-lg border p-3 bg-purple-50 border-purple-100">
           <p className="text-xs text-gray-500 mb-1">风险回报比</p>
@@ -75,6 +91,20 @@ export default function InvestmentStats({ timeRange }: Props) {
             {stats.avgRiskReward !== null ? `${stats.avgRiskReward}:1` : '-'}
           </p>
           <p className="text-[11px] text-gray-400 mt-0.5">平均值</p>
+        </div>
+        <div className="rounded-lg border p-3 bg-white border-gray-200">
+          <p className="text-xs text-gray-500 mb-1">累计已实现盈亏</p>
+          <p className={`text-xl font-bold ${pnlColor(stats.totalProfitAmount)}`}>
+            {fmtMoney(stats.totalProfitAmount)}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">按单据币种加总</p>
+        </div>
+        <div className="rounded-lg border p-3 bg-white border-gray-200">
+          <p className="text-xs text-gray-500 mb-1">平均盈亏</p>
+          <p className={`text-xl font-bold ${pnlColor(stats.avgProfitPercent)}`}>
+            {stats.avgProfitPercent !== null ? `${stats.avgProfitPercent > 0 ? '+' : ''}${stats.avgProfitPercent}%` : '-'}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">已平仓单据</p>
         </div>
       </div>
 
@@ -95,7 +125,7 @@ export default function InvestmentStats({ timeRange }: Props) {
                   className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${colorClass}`}
                 >
                   {item.name}
-                  <span className="font-medium">{item.count}笔</span>
+                  <span className="font-medium">{item.count}单</span>
                 </span>
               );
             })}

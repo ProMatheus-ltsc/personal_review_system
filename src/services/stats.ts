@@ -288,36 +288,142 @@ export function calcWeeklyReviewStats(records: FormRecord[]): WeeklyReviewStats 
 // 投资检查清单统计
 // ============================================================
 
+/** 数值转换（空值/非法 → undefined） */
+function toNum(v: unknown): number | undefined {
+  if (v === undefined || v === null || String(v).trim() === '') return undefined;
+  const n = parseFloat(String(v));
+  return isNaN(n) ? undefined : n;
+}
+
+/** 读取一条投资单据的卖出批次（合并单据优先 merged_sell_lots，否则用顶层卖出字段） */
+interface SellBatchLike {
+  date?: string;
+  price?: string | number;
+  qty?: string | number;
+  reason?: string;
+}
+
+function readSellBatches(r: FormRecord): SellBatchLike[] {
+  const merged = r.data['merged_sell_lots'];
+  if (Array.isArray(merged) && merged.length > 0) return merged as unknown as SellBatchLike[];
+  // 兼容未合并的单笔记录：顶层卖出字段视为一笔批次
+  const sellPrice = r.data['sell_exit_price'];
+  if (sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '') {
+    return [{
+      date: r.data['sell_date'] as string | undefined,
+      price: sellPrice as string | number | undefined,
+      qty: r.data['sell_quantity'] as string | number | undefined,
+    }];
+  }
+  return [];
+}
+
+/** 判断单据是否已清仓（已全部卖出）：顶层卖出字段恢复（sold_out 时）或标记 */
+function isClosedRecord(r: FormRecord): boolean {
+  if (r.data['sold_out'] === true) return true;
+  const sellPrice = r.data['sell_exit_price'];
+  return sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '';
+}
+
 export interface InvestmentStats {
-  /** 总交易数 */
+  /** 投资单据总数（含持仓中） */
   totalTrades: number;
-  /** 已完成交易数（有卖出数据） */
+  /** 卖出批次总数（合并单据按批次计，避免重复计数） */
+  totalSellBatches: number;
+  /** 已清仓单据数（全部卖出） */
   closedTrades: number;
-  /** 胜率（盈利数 / 已完成数） */
+  /** 胜率（盈利单据 / 已清仓单据） */
   winRate: number | null;
   /** 平均风险回报比 */
   avgRiskReward: number | null;
+  /** 平均持有天数（已清仓单据，最后卖出日 − 买入日） */
+  avgHoldDays: number | null;
+  /** 累计已实现盈亏金额（按单据各自币种加总；跨币种仅供参考） */
+  totalProfitAmount: number | null;
+  /** 平均盈亏百分比（已清仓单据） */
+  avgProfitPercent: number | null;
   /** 盈亏分布 */
   profitDistribution: { name: string; count: number }[];
 }
 
 export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
-  // 已关闭交易：有 sell_exit_price 的记录
-  const closedRecords = records.filter((r) => {
-    const sellPrice = r.data['sell_exit_price'];
-    return sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '';
+  let totalSellBatches = 0;
+  const closed: { pnlPercent: number; holdDays: number | null }[] = [];
+  let totalProfitAmount = 0;
+  let profitAmountValid = true;
+
+  records.forEach((r) => {
+    const batches = readSellBatches(r);
+    totalSellBatches += batches.length;
+    if (batches.length === 0) return;
+
+    const buyWeighted = toNum(r.data['buy_price']); // 加权买入价（合并后）
+    const closedRec = isClosedRecord(r);
+
+    // 已实现盈亏（含部分卖出的已卖部分）：Σ qty × (批次价 − 加权买入价)
+    if (buyWeighted !== undefined) {
+      let profit = 0;
+      batches.forEach((b) => {
+        const p = toNum(b.price);
+        const q = toNum(b.qty);
+        if (p !== undefined && q !== undefined) profit += q * (p - buyWeighted);
+      });
+      totalProfitAmount += profit;
+    } else {
+      profitAmountValid = false;
+    }
+
+    if (closedRec) {
+      // 加权卖出价
+      let sellQty = 0;
+      let sellCost = 0;
+      batches.forEach((b) => {
+        const p = toNum(b.price);
+        const q = toNum(b.qty);
+        if (p !== undefined && q !== undefined && q > 0) {
+          sellCost += p * q;
+          sellQty += q;
+        }
+      });
+      const sellWeighted = sellQty > 0 ? sellCost / sellQty : undefined;
+      const pnlPercent = buyWeighted !== undefined && sellWeighted !== undefined && buyWeighted > 0
+        ? ((sellWeighted - buyWeighted) / buyWeighted) * 100
+        : NaN;
+
+      // 持有天数：最后卖出日 − 买入日
+      let holdDays: number | null = null;
+      const buyDate = (r.data['buy_date'] as string) || undefined;
+      const lastSellDate = batches
+        .map((b) => (b.date as string) || '')
+        .filter((d) => !!d)
+        .sort()
+        .pop() || buyDate;
+      if (buyDate && lastSellDate) {
+        const start = new Date(buyDate);
+        const end = new Date(lastSellDate);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          holdDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        }
+      }
+
+      closed.push({
+        pnlPercent: isNaN(pnlPercent) ? 0 : pnlPercent,
+        holdDays,
+      });
+    }
   });
 
-  // 胜率：sell_profit_result === '盈利' 或 sell_pnl_percent > 0
-  const winRecords = closedRecords.filter((r) => {
-    const result = r.data['sell_profit_result'];
-    if (result === '盈利') return true;
-    const pnl = Number(r.data['sell_pnl_percent']);
-    return !isNaN(pnl) && pnl > 0;
-  });
+  const closedTrades = closed.length;
+  const winRecords = closed.filter((c) => c.pnlPercent > 0).length;
+  const winRate = closedTrades > 0 ? Math.round((winRecords / closedTrades) * 100) : null;
 
-  const winRate = closedRecords.length > 0
-    ? Math.round((winRecords.length / closedRecords.length) * 100)
+  const avgProfitPercent = closedTrades > 0
+    ? Math.round((closed.reduce((s, c) => s + c.pnlPercent, 0) / closedTrades) * 100) / 100
+    : null;
+
+  const holdDayValues = closed.map((c) => c.holdDays).filter((d): d is number => d !== null);
+  const avgHoldDays = holdDayValues.length > 0
+    ? Math.round(holdDayValues.reduce((a, b) => a + b, 0) / holdDayValues.length)
     : null;
 
   // 平均风险回报比
@@ -333,12 +439,13 @@ export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
     ? Math.round((rrValues.reduce((a, b) => a + b, 0) / rrValues.length) * 100) / 100
     : null;
 
-  // 盈亏分布
+  // 盈亏分布（已清仓单据按 sell_profit_result 或盈亏方向）
   const profitCount: Record<string, number> = {};
-  closedRecords.forEach((r) => {
+  records.forEach((r) => {
+    if (!isClosedRecord(r)) return;
     const result = r.data['sell_profit_result'];
-    if (result && String(result).trim()) {
-      const name = String(result);
+    const name = result && String(result).trim() ? String(result) : undefined;
+    if (name) {
       profitCount[name] = (profitCount[name] || 0) + 1;
     }
   });
@@ -348,9 +455,13 @@ export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
 
   return {
     totalTrades: records.length,
-    closedTrades: closedRecords.length,
+    totalSellBatches,
+    closedTrades,
     winRate,
     avgRiskReward,
+    avgHoldDays,
+    totalProfitAmount: profitAmountValid ? Math.round(totalProfitAmount * 100) / 100 : null,
+    avgProfitPercent,
     profitDistribution,
   };
 }

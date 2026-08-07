@@ -30,7 +30,9 @@ import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
 import ConfirmDialog from './ConfirmDialog';
 import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
-import { mergeSameCodeBuys, applySellBatch, PHASE_REVIEW } from '@/services/investmentMerge';
+import SellContextInline from './SellContextInline';
+import ReviewContextInline from './ReviewContextInline';
+import { mergeSameCodeBuys, applySellBatch, undoLastSellBatch, PHASE_REVIEW } from '@/services/investmentMerge';
 
 /**
  * 解析模板字段中的 magic string defaultValue 为实际值
@@ -609,6 +611,18 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     }
   }, [canMarkComplete, performSave, phases, template.name, getValues, initialData, showToast, onSave]);
 
+  /** 撤销最近一笔卖出（投资清单）：仅未复盘时可撤销 */
+  const handleUndoLastSell = useCallback(async () => {
+    const record = buildRecord('draft');
+    const res = await undoLastSellBatch(record);
+    if (res?.error) {
+      showToast(res.error, 'error');
+    } else if (res) {
+      syncMergedData(res.data);
+      showToast('已撤销最近一笔卖出', 'success');
+    }
+  }, [buildRecord, syncMergedData, showToast]);
+
   const goNext = () => {
     if (activeTab < template.sections.length - 1) {
       handleTabChange(activeTab + 1);
@@ -728,6 +742,12 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // For annual review: get the year value for the sidebar
   const annualYearValue = template.id === 'annual_review' ? (watch('annual_year') as string || String(new Date().getFullYear())) : '';
 
+  // 投资清单：是否已复盘（有卖出复盘核心教训）→ 控制撤销卖出按钮
+  const sellReviewEntries = watch('sell_review_entries') as Record<string, unknown>[] | undefined;
+  const sellReviewed = Array.isArray(sellReviewEntries) && sellReviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
+  const mergedSellLotsWatch = watch('merged_sell_lots') as unknown[] | undefined;
+  const hasSellLots = Array.isArray(mergedSellLotsWatch) && mergedSellLotsWatch.length > 0;
+
   // Templates that support smart reference sidebar
   const SIDEBAR_TEMPLATES = ['weekly_review', 'monthly_review', 'annual_review'];
   const showSidebar = SIDEBAR_TEMPLATES.includes(template.id);
@@ -807,6 +827,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           totalSellQty={watch('merged_total_sell_qty') as string | number | undefined}
           soldOut={watch('sold_out') as boolean | undefined}
           lastSellDate={watch('last_sell_date') as string | undefined}
+          reviewed={sellReviewed}
+          onUndoLastSell={hasSellLots ? handleUndoLastSell : undefined}
           emptyText={
             currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
               ? '📌 同代码且都在持有阶段的买入记录会自动合并进当前单据（加权买入价 + 逐笔明细）；部分卖出的剩余持仓仍可合并新买入，全部卖出后以最后卖出日期为准 30 天解锁复盘'
@@ -974,6 +996,31 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                     <span>📋</span>
                     <span>目标已从上周复盘的「下周规划」自动加载，你可以直接编辑调整</span>
                   </div>
+                )}
+
+                {/* 投资清单：卖出阶段内联持仓上下文（加权成本/剩余持仓/实时盈亏） */}
+                {template.id === 'investment_checklist' && activeSection.id === 'when_selling' && (
+                  <SellContextInline
+                    buyPrice={watch('buy_price')}
+                    totalQty={watch('merged_total_qty') as string | number | undefined}
+                    sellQty={watch('merged_total_sell_qty') as string | number | undefined}
+                    sellPrice={watch('sell_exit_price')}
+                    sellQuantity={watch('sell_quantity')}
+                    currency={(watch('buy_currency') as string) || 'CNY'}
+                  />
+                )}
+
+                {/* 投资清单：卖出复盘量化对比（目标价/止损/持有周期 vs 实际） */}
+                {template.id === 'investment_checklist' && activeSection.id === 'sell_review' && (
+                  <ReviewContextInline
+                    buyPrice={watch('buy_price')}
+                    sellPrice={watch('sell_exit_price')}
+                    targetPrice={watch('buy_target_price_num')}
+                    stopLoss={watch('buy_stop_loss_price')}
+                    buyDate={watch('buy_date') as string | undefined}
+                    lastSellDate={watch('last_sell_date') as string | undefined}
+                    timeframe={watch('buy_timeframe') as string | undefined}
+                  />
                 )}
 
                 {/* Required + Recommended fields */}

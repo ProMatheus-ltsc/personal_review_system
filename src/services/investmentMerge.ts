@@ -297,4 +297,65 @@ export async function applySellBatch(current: FormRecord): Promise<MergeResult |
   return { merged: lots.length - (existingIdx >= 0 ? 1 : 0), data, soldOut, remainingQty: remaining };
 }
 
+/**
+ * 撤销最近一笔卖出：从 merged_sell_lots 移除最后一批，重算加权卖出价/总卖出量/剩余持仓。
+ * 仅当尚未复盘（sell_review_entries 为空）时可撤销，避免修改已沉淀的复盘结论。
+ * @returns 撤销后的数据；无可撤销或已复盘时返回 { error }
+ */
+export async function undoLastSellBatch(current: FormRecord): Promise<MergeResult | null> {
+  const code = String(current.data.buy_company_name ?? '').trim();
+  if (!code) return null;
+
+  const lots = readSellLots(current);
+  if (lots.length === 0) {
+    return { merged: 0, data: current.data, error: '没有可撤销的卖出记录' };
+  }
+
+  // 已复盘则不允许撤销（卖出复盘为可重复段，检查是否已有核心教训）
+  const reviewEntries = current.data.sell_review_entries as Record<string, unknown>[] | undefined;
+  const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
+  if (reviewed) {
+    return { merged: 0, data: current.data, error: '已填写卖出复盘，无法撤销卖出记录' };
+  }
+
+  const newLots = lots.slice(0, -1);
+  const totalSell = newLots.reduce((s, l) => s + (toNum(l.qty) ?? 0), 0);
+  const sellWeighted = weightedAvg(newLots.map((l) => ({ price: toNum(l.price) ?? 0, qty: toNum(l.qty) ?? 0 })));
+  const lastSellDate = newLots
+    .map((l) => l.date)
+    .filter((d): d is string => !!d)
+    .sort()
+    .pop();
+  const totalBuy = totalBuyQtyOf(current);
+  const remaining = totalBuy - totalSell;
+  const soldOut = remaining === 0;
+
+  const data: Record<string, unknown> = { ...current.data };
+  data.merged_sell_lots = newLots;
+  data.merged_total_sell_qty = totalSell;
+  if (sellWeighted !== undefined) data.sell_exit_price = sellWeighted.toFixed(4);
+  else data.sell_exit_price = '';
+  if (lastSellDate) data.last_sell_date = lastSellDate;
+  else data.last_sell_date = '';
+  data.sold_out = soldOut;
+
+  if (soldOut) {
+    data.sell_date = lastSellDate || '';
+    data.sell_quantity = String(totalSell);
+    data.sell_status = 'full';
+    data.sell_reason = newLots[newLots.length - 1]?.reason ?? '';
+    data.remaining_qty = 0;
+  } else {
+    SELL_TOP_LEVEL_FIELDS.forEach((f) => {
+      data[f] = '';
+    });
+    data.sell_status = 'partial';
+    data.remaining_qty = remaining;
+  }
+
+  const updated: FormRecord = { ...current, data, updatedAt: new Date().toISOString() };
+  await saveRecord(updated);
+  return { merged: newLots.length, data, soldOut, remainingQty: remaining };
+}
+
 export { PHASE_BUYING, PHASE_HOLDING, PHASE_REVIEW };

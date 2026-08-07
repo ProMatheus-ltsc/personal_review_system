@@ -56,6 +56,32 @@ function getPhaseBadgeColor(phaseId: string): string {
   return 'bg-green-50 text-green-600';
 }
 
+/** 投资清单：持仓状态徽标（替代阶段徽标，信息更直观） */
+function getInvestmentBadge(record: FormRecord): { label: string; className: string } | null {
+  if (record.templateId !== 'investment_checklist') return null;
+  const d = record.data;
+  const code = String(d.buy_company_name ?? '').trim();
+  if (!code) return null;
+
+  const sellPrice = d.sell_exit_price;
+  const hasTopSell = sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '';
+  const sellLots = Array.isArray(d.merged_sell_lots) ? (d.merged_sell_lots as unknown[]) : [];
+
+  if (d.sold_out === true) return { label: '已清仓', className: 'bg-green-100 text-green-700' };
+  if (hasTopSell) return { label: '待复盘', className: 'bg-amber-100 text-amber-700' };
+  if (sellLots.length > 0) {
+    const total = Number(d.merged_total_qty ?? d.buy_quantity ?? 0);
+    const sold = Number(d.merged_total_sell_qty ?? 0);
+    const remaining = isNaN(total - sold) ? 0 : total - sold;
+    return { label: `部分卖出 · 剩余 ${remaining > 0 ? remaining : 0}`, className: 'bg-blue-100 text-blue-600' };
+  }
+  // 买入已完成（核心买入逻辑已填）→ 持仓中
+  if (d.buy_company_name && d.buy_thesis) {
+    return { label: '持仓中', className: 'bg-sky-100 text-sky-700' };
+  }
+  return null;
+}
+
 interface HistoryListProps {
   records: FormRecord[];
   onSelect: (record: FormRecord) => void;
@@ -120,6 +146,7 @@ export default function HistoryList({
       {records.map((record) => {
         const phase = getRecordPhase(record);
         const isDraftWithPhase = record.status === 'draft' && phase;
+        const investmentBadge = getInvestmentBadge(record);
 
         return (
         <div
@@ -153,11 +180,15 @@ export default function HistoryList({
                   locale: zhCN,
                 })}
               </p>
-              {phase && (
+              {investmentBadge ? (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${investmentBadge.className}`}>
+                  {investmentBadge.label}
+                </span>
+              ) : phase ? (
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${getPhaseBadgeColor(phase.id)}`}>
                   {phase.icon} {phase.label}
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
           {isDraftWithPhase ? (

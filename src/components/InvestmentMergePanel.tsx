@@ -32,6 +32,10 @@ interface InvestmentMergePanelProps {
   soldOut?: boolean;
   /** 最后卖出日期（全部卖出后作为复盘解锁基准） */
   lastSellDate?: string;
+  /** 是否已填写卖出复盘（有复盘时禁止撤销卖出） */
+  reviewed?: boolean;
+  /** 撤销最近一笔卖出的回调（未复盘且存在卖出批次时显示按钮） */
+  onUndoLastSell?: () => void;
   /** 当前单据尚未合并时显示的空态文案 */
   emptyText?: string;
 }
@@ -71,6 +75,8 @@ export default function InvestmentMergePanel({
   totalSellQty,
   soldOut,
   lastSellDate,
+  reviewed,
+  onUndoLastSell,
   emptyText,
 }: InvestmentMergePanelProps) {
   if (!stockCode) return null;
@@ -229,6 +235,18 @@ export default function InvestmentMergePanel({
                 本次为部分卖出，剩余 {remaining} 股仍在持仓，可继续合并同代码新买入；全部卖出后以最后卖出日期为准 30 天解锁复盘
               </p>
             )
+          )}
+          {onUndoLastSell && reviewed === false && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onUndoLastSell}
+                className="text-[11px] px-2 py-1 rounded-md border border-amber-300 text-amber-700 bg-white hover:bg-amber-50 transition"
+                title="撤销最近一笔卖出（已复盘后不可撤销）"
+              >
+                ↩️ 撤销最近一笔卖出
+              </button>
+            </div>
           )}
         </div>
       )}
