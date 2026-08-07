@@ -19,6 +19,7 @@ import {
   setSetting,
 } from '@/services/db';
 import { StatsPanel } from '@/components/stats';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function DataPage() {
   const [stats, setStats] = useState<{
@@ -31,6 +32,8 @@ export default function DataPage() {
   const [importStrategy, setImportStrategy] = useState<'merge' | 'replace'>('merge');
   const [importResult, setImportResult] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [pendingImportText, setPendingImportText] = useState<string | null>(null);
+  const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -56,11 +59,25 @@ export default function DataPage() {
       a.download = `review-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      // Record last backup date
+      // Record last backup date and record count for periodic reminder
       await setSetting('lastBackupDate', new Date().toISOString());
+      await setSetting('lastBackupRecordCount', String(stats?.total ?? 0));
       setLastBackup(new Date().toISOString());
     } finally {
       setExporting(false);
+    }
+  };
+
+  const executeImport = async (text: string, strategy: 'merge' | 'replace') => {
+    try {
+      const result = await importRecords(text, strategy);
+      setImportResult(
+        `导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条`
+      );
+      await loadData();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '未知错误';
+      setImportResult(`导入失败：${message}`);
     }
   };
 
@@ -72,16 +89,11 @@ export default function DataPage() {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       const text = await file.text();
-      try {
-        const result = await importRecords(text, importStrategy);
-        setImportResult(
-          `导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条`
-        );
-        // Reload stats
-        await loadData();
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : '未知错误';
-        setImportResult(`导入失败：${message}`);
+      if (importStrategy === 'replace') {
+        setPendingImportText(text);
+        setShowReplaceConfirm(true);
+      } else {
+        await executeImport(text, 'merge');
       }
     };
     input.click();
@@ -274,6 +286,31 @@ export default function DataPage() {
           </div>
         </div>
       </section>
+
+      <ConfirmDialog
+        isOpen={showReplaceConfirm}
+        title="确认覆盖导入"
+        message={
+          <>
+            覆盖模式将<strong>清空当前全部 {stats?.total ?? 0} 条记录</strong>，然后替换为备份文件内容。此操作不可撤销。
+            <br /><br />
+            确定要覆盖导入吗？
+          </>
+        }
+        confirmText="确认覆盖"
+        cancelText="取消"
+        onConfirm={async () => {
+          setShowReplaceConfirm(false);
+          if (pendingImportText) {
+            await executeImport(pendingImportText, 'replace');
+            setPendingImportText(null);
+          }
+        }}
+        onCancel={() => {
+          setShowReplaceConfirm(false);
+          setPendingImportText(null);
+        }}
+      />
     </div>
   );
 }
