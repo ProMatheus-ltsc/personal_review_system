@@ -98,7 +98,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
             if (field.type === 'table' && Array.isArray(value) && field.tableColumns) {
               const columns = field.tableColumns;
               const rows = value.filter((row: Record<string, string>) =>
-                columns.some((col) => row[col.id] && row[col.id].trim() !== '')
+                columns.some((col) => String(row[col.id] ?? '').trim() !== '')
               );
               html += `<h4 style="font-size: 14px; font-weight: 600; margin-top: 12px; margin-bottom: 6px; color: #555;">${field.label}</h4>`;
               if (rows.length === 0) {
@@ -141,7 +141,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
         const columns = field.tableColumns;
         // Filter out rows where all columns are empty
         const rows = value.filter((row: Record<string, string>) =>
-          columns.some((col) => row[col.id] && row[col.id].trim() !== '')
+          columns.some((col) => String(row[col.id] ?? '').trim() !== '')
         );
 
         html += `<h3 style="font-size: 15px; font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #444;">${field.label}</h3>`;
