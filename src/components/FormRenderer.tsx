@@ -1442,14 +1442,19 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                     ✅ 已完成
                   </button>
               ) : isSectionLocked(activeTab + 1) && canMarkComplete() ? (
-                  // completesRecord 阶段（决策后/卖出）已完成、下一阶段被时间锁定：
-                  // 在此即可标记记录完成，复盘阶段将在冷静期后解锁
+                  // completesRecord 阶段（决策后/卖出/买入）已完成、下一阶段被时间锁定：
+                  // 在此即可标记记录完成，复盘阶段将在冷静期后解锁。
+                  // 投资清单的买入/卖出单显示「完成买入单/完成卖出单」语义，等待复盘解锁
                   <button
                       type="button"
                       onClick={handleMarkComplete}
                       className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
                   >
-                    ✅ 完成
+                    {template.id === 'investment_checklist' && recordRole === 'buy'
+                        ? '✅ 完成买入单 · 等待复盘'
+                        : template.id === 'investment_checklist' && recordRole === 'sell'
+                            ? '✅ 完成卖出单 · 等待复盘'
+                            : '✅ 完成'}
                   </button>
               ) : (
                   <button

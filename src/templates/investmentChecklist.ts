@@ -343,6 +343,9 @@ export function buildRoleTemplate(role: InvestmentRecordRole, cooldownDays = DEF
           icon: '🎯',
           sectionIndices: [0],
           completionFields: ['buy_company_name', 'buy_thesis', 'buy_understand_business'],
+          // 买入阶段填写完成即可标记整单完成（completesRecord），
+          // 买入复盘将在冷静期后解锁——与卖出单/决策日志的完成语义保持一致
+          completesRecord: true,
         },
         {
           id: 'buy_review',
