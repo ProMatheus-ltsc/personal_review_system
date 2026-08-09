@@ -83,11 +83,11 @@ interface FormRendererProps {
 }
 
 const FormRenderer: React.FC<FormRendererProps> = ({
-  template,
-  initialData,
-  recordId,
-  onSave,
-}) => {
+                                                     template,
+                                                     initialData,
+                                                     recordId,
+                                                     onSave,
+                                                   }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -169,8 +169,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   }, [template]);
 
   const computedDependencyFields = useMemo(
-    () => [...new Set(computedFields.flatMap((c) => c.dependsOn))],
-    [computedFields]
+      () => [...new Set(computedFields.flatMap((c) => c.dependsOn))],
+      [computedFields]
   );
 
   const watchedComputedDeps = useWatch({
@@ -216,16 +216,16 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         const keyActions = prevData.key_actions as Record<string, string>[] | undefined;
         if (Array.isArray(keyActions) && keyActions.length > 0) {
           const formatted = keyActions
-            .filter(row => row.goal || row.action)
-            .map((row, i) => {
-              const parts: string[] = [];
-              if (row.goal) parts.push(`目标: ${row.goal}`);
-              if (row.action) parts.push(`行动: ${row.action}`);
-              if (row.deadline) parts.push(`截止: ${row.deadline}`);
-              if (row.priority) parts.push(`优先级: ${row.priority}`);
-              return `${i + 1}. ${parts.join(' | ')}`;
-            })
-            .join('\n');
+              .filter(row => row.goal || row.action)
+              .map((row, i) => {
+                const parts: string[] = [];
+                if (row.goal) parts.push(`目标: ${row.goal}`);
+                if (row.action) parts.push(`行动: ${row.action}`);
+                if (row.deadline) parts.push(`截止: ${row.deadline}`);
+                if (row.priority) parts.push(`优先级: ${row.priority}`);
+                return `${i + 1}. ${parts.join(' | ')}`;
+              })
+              .join('\n');
           if (formatted) {
             setValue('last_week_actions', formatted, { shouldDirty: false });
           }
@@ -257,22 +257,22 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   }, [phases, template.sections]);
 
   const phaseCompletionFields = useMemo(
-    () => {
-      if (!phases) return [] as string[];
-      const fields: string[] = [];
-      phases.forEach((phase) => {
-        const isRepeatablePhase = phase.sectionIndices.some((idx) =>
-          template.sections[idx]?.repeatable
-        );
-        if (!isRepeatablePhase) {
-          phase.completionFields.forEach((f) => {
-            if (!fields.includes(f)) fields.push(f);
-          });
-        }
-      });
-      return fields;
-    },
-    [phases, template.sections]
+      () => {
+        if (!phases) return [] as string[];
+        const fields: string[] = [];
+        phases.forEach((phase) => {
+          const isRepeatablePhase = phase.sectionIndices.some((idx) =>
+              template.sections[idx]?.repeatable
+          );
+          if (!isRepeatablePhase) {
+            phase.completionFields.forEach((f) => {
+              if (!fields.includes(f)) fields.push(f);
+            });
+          }
+        });
+        return fields;
+      },
+      [phases, template.sections]
   );
 
   const watchedPhaseValues = useWatch({
@@ -310,28 +310,41 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         setActiveTab(firstSectionIdx);
       }
       // 编辑已有记录时，直接以当前阶段作为已进入的最高阶段（之前的阶段锁定）
-      setVisitedMaxPhase(currentPhaseIndex);
+      // 特殊处理：部分卖出后的记录（sell_status=partial），虽然 currentPhaseIndex 可能在卖出阶段，
+      // 但持有阶段应该保持可编辑（用户需要为剩余持仓添加持有检查），因此 visitedMaxPhase 不超过持有阶段
+      let effectiveMaxPhase = currentPhaseIndex;
+      if (initialData.sell_status === 'partial' && template.id === 'investment_checklist') {
+        const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
+        if (holdingPhaseIdx >= 0 && currentPhaseIndex > holdingPhaseIdx) {
+          effectiveMaxPhase = holdingPhaseIdx;
+        }
+      }
+      setVisitedMaxPhase(effectiveMaxPhase);
+      // 部分卖出/撤销后的记录，卖出日期被清空了，重新打开时默认填充今天日期
+      if (template.id === 'investment_checklist' && !initialData.sell_date) {
+        setValue('sell_date', new Date().toISOString().slice(0, 10), { shouldDirty: false });
+      }
       setInitialTabSet(true);
     } else if (!initialTabSet) {
       setInitialTabSet(true);
     }
-  }, [initialTabSet, phases, initialData, currentPhaseIndex]);
+  }, [initialTabSet, phases, initialData, currentPhaseIndex, template.id, setValue]);
 
   const buildRecord = useCallback(
-    (status: 'draft' | 'completed'): FormRecord => {
-      const now = new Date().toISOString();
-      const data = getValues();
-      return {
-        id: currentRecordId.current,
-        templateId: template.id,
-        title: `${template.name} - ${format(new Date(), 'yyyy-MM-dd')}`,
-        data,
-        status,
-        createdAt: initialData ? (initialData._createdAt as string) || now : now,
-        updatedAt: now,
-      };
-    },
-    [getValues, template, initialData]
+      (status: 'draft' | 'completed'): FormRecord => {
+        const now = new Date().toISOString();
+        const data = getValues();
+        return {
+          id: currentRecordId.current,
+          templateId: template.id,
+          title: `${template.name} - ${format(new Date(), 'yyyy-MM-dd')}`,
+          data,
+          status,
+          createdAt: initialData ? (initialData._createdAt as string) || now : now,
+          updatedAt: now,
+        };
+      },
+      [getValues, template, initialData]
   );
 
   // Check if all phases before the completesRecord phase are filled
@@ -346,19 +359,19 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     for (let i = 0; i <= completesPhaseIndex; i++) {
       const phase = phases[i];
       const repeatableSection = template.sections.find((s, idx) =>
-        s.repeatable && phase.sectionIndices.includes(idx)
+          s.repeatable && phase.sectionIndices.includes(idx)
       );
       if (repeatableSection) {
         const entriesKey = `${repeatableSection.id}_entries`;
         const entries = formData[entriesKey] as Record<string, unknown>[] | undefined;
         if (!entries || entries.length === 0) return false;
         const hasCompleteEntry = entries.some((entry) =>
-          phase.completionFields.every((fieldId) => !isFieldEmpty(entry[fieldId]))
+            phase.completionFields.every((fieldId) => !isFieldEmpty(entry[fieldId]))
         );
         if (!hasCompleteEntry) return false;
       } else {
         const allComplete = phase.completionFields.every(
-          (fieldId) => !isFieldEmpty(formData[fieldId])
+            (fieldId) => !isFieldEmpty(formData[fieldId])
         );
         if (!allComplete) return false;
       }
@@ -368,110 +381,118 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // Track record status from initial data
   const [recordStatus, setRecordStatus] = useState<'draft' | 'completed'>(
-    initialData?._status as 'draft' | 'completed' || 'draft'
+      initialData?._status as 'draft' | 'completed' || 'draft'
   );
 
   /** 将合并后的数据同步回表单，保证界面与库中一致（含卖出字段清空） */
   const syncMergedData = useCallback(
-    (data: Record<string, unknown>) => {
-      (
-        [
-          'buy_price',
-          'merged_buy_lots',
-          'merged_total_qty',
-          'sell_exit_price',
-          'sell_date',
-          'sell_quantity',
-          'sell_reason',
-          'sell_reason_other',
-          'sell_emotion_state',
-          'sell_check_reason',
-          'sell_check_rebuy',
-          'merged_sell_lots',
-          'merged_total_sell_qty',
-          'last_sell_date',
-          'sold_out',
-          'remaining_qty',
-          'sell_status',
-          'merged_snapshots',
-          'parent_position_id',
-          '_sell_batch_id',
-        ] as const
-      ).forEach((k) => {
-        if (k in data) setValue(k, data[k], { shouldDirty: false });
-      });
-    },
-    [setValue]
+      (data: Record<string, unknown>) => {
+        (
+            [
+              'buy_price',
+              'merged_buy_lots',
+              'merged_total_qty',
+              'sell_exit_price',
+              'sell_date',
+              'sell_quantity',
+              'sell_reason',
+              'sell_reason_other',
+              'sell_emotion_state',
+              'sell_check_reason',
+              'sell_check_rebuy',
+              'merged_sell_lots',
+              'merged_total_sell_qty',
+              'last_sell_date',
+              'sold_out',
+              'remaining_qty',
+              'sell_status',
+              'merged_snapshots',
+              'parent_position_id',
+              '_sell_batch_id',
+            ] as const
+        ).forEach((k) => {
+          if (k in data) setValue(k, data[k], { shouldDirty: false });
+        });
+      },
+      [setValue]
   );
 
   const performSave = useCallback(
-    async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {
-      try {
-        setSaveStatus('saving');
-        // 首次标记完成时写入完成日期，作为复盘阶段 30 天解锁的基准
-        if (status === 'completed' && isFieldEmpty(getValues('_completedAt'))) {
-          setValue('_completedAt', new Date().toISOString().slice(0, 10), { shouldDirty: false });
-        }
-        // 已完成记录被重新编辑并自动保存时保持 completed 状态，避免被草稿保存降级
-        const finalStatus: 'draft' | 'completed' =
-          status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
-        const record = buildRecord(finalStatus);
-        await save(record);
+      async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {
+        try {
+          setSaveStatus('saving');
+          // 首次标记完成时写入完成日期，作为复盘阶段 30 天解锁的基准
+          if (status === 'completed' && isFieldEmpty(getValues('_completedAt'))) {
+            setValue('_completedAt', new Date().toISOString().slice(0, 10), { shouldDirty: false });
+          }
+          // 已完成记录被重新编辑并自动保存时保持 completed 状态，避免被草稿保存降级
+          const finalStatus: 'draft' | 'completed' =
+              status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
+          const record = buildRecord(finalStatus);
+          await save(record);
 
-        // 投资清单：保存后自动合并同股票代码的分笔记录（整个生命周期只保留一份单据）
-        // skipMerge=true 用于 30 秒定时自动保存：用户可能还在填写买入阶段，此时不应触发合并，
-        // 避免"填到一半就被合并走"的困惑体验。合并只在用户主动保存/切换 tab/点完成时触发。
-        if (template.id === 'investment_checklist' && !skipMerge) {
-          const code = String(record.data.buy_company_name ?? '').trim();
-          if (code) {
-            // 卖出拆分并入：填写了卖出 → 本笔卖出拆成批次立即并入当前单据
-            // 已全部卖出（sold_out）的单据顶层卖出字段仍保留加权卖出价，
-            // 复盘阶段的后续自动保存不应再当作"新的一笔卖出"重新校验，否则会
-            // 反复触发"超过剩余持仓"的误报
-            if (!isFieldEmpty(record.data.sell_exit_price) && record.data.sold_out !== true) {
-              const res = await applySellBatch(record);
-              if (res?.error) {
-                showToast(res.error, 'error');
-              } else if (res) {
-                syncMergedData(res.data);
-                if (res.soldOut) {
+          // 投资清单：保存后自动合并同股票代码的分笔记录（整个生命周期只保留一份单据）
+          // skipMerge=true 用于 30 秒定时自动保存：用户可能还在填写买入阶段，此时不应触发合并，
+          // 避免"填到一半就被合并走"的困惑体验。合并只在用户主动保存/切换 tab/点完成时触发。
+          if (template.id === 'investment_checklist' && !skipMerge) {
+            const code = String(record.data.buy_company_name ?? '').trim();
+            if (code) {
+              // 卖出拆分并入：填写了卖出 → 本笔卖出拆成批次立即并入当前单据
+              // 已全部卖出（sold_out）的单据顶层卖出字段仍保留加权卖出价，
+              // 复盘阶段的后续自动保存不应再当作"新的一笔卖出"重新校验，否则会
+              // 反复触发"超过剩余持仓"的误报
+              if (!isFieldEmpty(record.data.sell_exit_price) && record.data.sold_out !== true) {
+                const res = await applySellBatch(record);
+                if (res?.error) {
+                  showToast(res.error, 'error');
+                } else if (res) {
+                  syncMergedData(res.data);
+                  if (res.soldOut) {
+                    showToast(
+                        `已全部卖出（${code}），加权卖出价 ${res.data.sell_exit_price ?? ''}，复盘将于最后卖出日期 30 天后解锁`,
+                        'success'
+                    );
+                  } else {
+                    // 部分卖出：单据回到持有状态，需要降级 visitedMaxPhase 以解除持有阶段的只读锁定，
+                    // 让用户可以继续为剩余持仓添加新的持有检查
+                    if (phases) {
+                      const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
+                      if (holdingPhaseIdx >= 0) {
+                        setVisitedMaxPhase(holdingPhaseIdx);
+                      }
+                    }
+                    showToast(
+                        `已记录本次卖出（${code}），剩余持仓 ${res.remainingQty ?? 0}，可继续买入合并`,
+                        'success'
+                    );
+                  }
+                }
+              } else {
+                // 买入合并：前提是同代码且双方都是持有中的开放持仓（未清仓）
+                const res = await mergeSameCodeBuys(record);
+                if (res) {
+                  syncMergedData(res.data);
                   showToast(
-                    `已全部卖出（${code}），加权卖出价 ${res.data.sell_exit_price ?? ''}，复盘将于最后卖出日期 30 天后解锁`,
-                    'success'
-                  );
-                } else {
-                  showToast(
-                    `已记录本次卖出（${code}），剩余持仓 ${res.remainingQty ?? 0}，可继续买入合并`,
-                    'success'
+                      `已自动合并 ${res.merged} 份同代码买入记录（${code}），加权买入价已更新`,
+                      'success'
                   );
                 }
               }
-            } else {
-              // 买入合并：前提是同代码且双方都是持有中的开放持仓（未清仓）
-              const res = await mergeSameCodeBuys(record);
-              if (res) {
-                syncMergedData(res.data);
-                showToast(
-                  `已自动合并 ${res.merged} 份同代码买入记录（${code}），加权买入价已更新`,
-                  'success'
-                );
-              }
             }
           }
-        }
 
-        setLastSaved(new Date());
-        setSaveStatus('saved');
-        if (finalStatus === 'completed') {
-          setRecordStatus('completed');
+          setLastSaved(new Date());
+          setSaveStatus('saved');
+          if (finalStatus === 'completed') {
+            setRecordStatus('completed');
+          }
+          return record;
+        } catch {
+          setSaveStatus('idle');
+          return null;
         }
-        return record;
-      } catch {
-        setSaveStatus('idle');
-        return null;
-      }
-    },
-    [buildRecord, save, recordStatus, getValues, setValue, template, syncMergedData, showToast]
+      },
+      [buildRecord, save, recordStatus, getValues, setValue, template, syncMergedData, showToast]
   );
 
   // Auto-save every 30 seconds (skip fully read-only completed records)
@@ -490,12 +511,12 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // Check if a section belongs to a locked (future) phase
   const isSectionLocked = useCallback(
-    (sectionIndex: number): boolean => {
-      if (!phases) return false;
-      const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
-      return sectionPhaseIdx > currentPhaseIndex;
-    },
-    [phases, currentPhaseIndex]
+      (sectionIndex: number): boolean => {
+        if (!phases) return false;
+        const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
+        return sectionPhaseIdx > currentPhaseIndex;
+      },
+      [phases, currentPhaseIndex]
   );
 
   // 判断 section 是否为只读：
@@ -505,59 +526,59 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   //   2) 记录标记完成后，completesRecord 阶段（决策后/卖出）及之前的阶段
   //      全部锁定，不能再修改（复盘阶段解锁后仍可填写）
   const isSectionReadOnly = useCallback(
-    (sectionIndex: number): boolean => {
-      if (!phases) return recordStatus === 'completed';
-      const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
-      if (sectionPhaseIdx < visitedMaxPhase) return true;
-      if (recordStatus === 'completed') {
-        const completesIdx = phases.findIndex((p) => p.completesRecord);
-        if (completesIdx >= 0 && sectionPhaseIdx <= completesIdx) return true;
-      }
-      return false;
-    },
-    [phases, recordStatus, visitedMaxPhase]
+      (sectionIndex: number): boolean => {
+        if (!phases) return recordStatus === 'completed';
+        const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
+        if (sectionPhaseIdx < visitedMaxPhase) return true;
+        if (recordStatus === 'completed') {
+          const completesIdx = phases.findIndex((p) => p.completesRecord);
+          if (completesIdx >= 0 && sectionPhaseIdx <= completesIdx) return true;
+        }
+        return false;
+      },
+      [phases, recordStatus, visitedMaxPhase]
   );
 
   // Save on tab switch
   const handleTabChange = useCallback(
-    (index: number) => {
-      // Prevent navigating to a locked section
-      if (isSectionLocked(index)) return;
-      // 回看已完成的只读阶段：允许直接进入，首次时 Toast 提示一次
-      if (phases && isSectionReadOnly(index) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
-        setReadonlyToastShown(true);
-        showToast('该阶段已完成，仅供查看、无法修改', 'info');
-      }
-      // 进入更高阶段后，之前的阶段才锁定
-      if (phases) {
-        const targetPhase = getSectionPhaseIndex(phases, index);
-        if (targetPhase > visitedMaxPhase) setVisitedMaxPhase(targetPhase);
-      }
-      performSave('draft');
-      setActiveTab(index);
-    },
-    [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
+      (index: number) => {
+        // Prevent navigating to a locked section
+        if (isSectionLocked(index)) return;
+        // 回看已完成的只读阶段：允许直接进入，首次时 Toast 提示一次
+        if (phases && isSectionReadOnly(index) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
+          setReadonlyToastShown(true);
+          showToast('该阶段已完成，仅供查看、无法修改', 'info');
+        }
+        // 进入更高阶段后，之前的阶段才锁定
+        if (phases) {
+          const targetPhase = getSectionPhaseIndex(phases, index);
+          if (targetPhase > visitedMaxPhase) setVisitedMaxPhase(targetPhase);
+        }
+        performSave('draft');
+        setActiveTab(index);
+      },
+      [performSave, isSectionLocked, phases, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
   );
 
   // Handle phase click - navigate to the first section of the selected phase
   const handlePhaseClick = useCallback(
-    (phaseIndex: number) => {
-      if (!phases) return;
-      // Don't navigate to locked phases
-      if (phaseIndex > currentPhaseIndex) return;
-      const firstSectionIdx = phases[phaseIndex]?.sectionIndices[0];
-      if (firstSectionIdx === undefined) return;
-      // 回看已完成的只读阶段：直接进入，首次 Toast 提示
-      if (isSectionReadOnly(firstSectionIdx) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
-        setReadonlyToastShown(true);
-        showToast('该阶段已完成，仅供查看、无法修改', 'info');
-      }
-      // 进入更高阶段后，之前的阶段才锁定
-      if (phaseIndex > visitedMaxPhase) setVisitedMaxPhase(phaseIndex);
-      performSave('draft');
-      setActiveTab(firstSectionIdx);
-    },
-    [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
+      (phaseIndex: number) => {
+        if (!phases) return;
+        // Don't navigate to locked phases
+        if (phaseIndex > currentPhaseIndex) return;
+        const firstSectionIdx = phases[phaseIndex]?.sectionIndices[0];
+        if (firstSectionIdx === undefined) return;
+        // 回看已完成的只读阶段：直接进入，首次 Toast 提示
+        if (isSectionReadOnly(firstSectionIdx) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
+          setReadonlyToastShown(true);
+          showToast('该阶段已完成，仅供查看、无法修改', 'info');
+        }
+        // 进入更高阶段后，之前的阶段才锁定
+        if (phaseIndex > visitedMaxPhase) setVisitedMaxPhase(phaseIndex);
+        performSave('draft');
+        setActiveTab(firstSectionIdx);
+      },
+      [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
   );
 
   const handleDraftSave = async () => {
@@ -612,9 +633,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       let msg = `「${template.name}」已完成 ✨`;
       if (nextPhase?.unlockAfterDays) {
         const lockInfo = getPhaseTimeLockInfo(
-          nextPhase,
-          getValues(),
-          initialData ? (initialData._createdAt as string) : undefined
+            nextPhase,
+            getValues(),
+            initialData ? (initialData._createdAt as string) : undefined
         );
         if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
           msg = `已标记为完成，「${nextPhase.label}」将在 ${lockInfo.daysRemaining} 天后解锁`;
@@ -637,11 +658,21 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       if (!res.soldOut && recordStatus === 'completed') {
         setRecordStatus('draft');
       }
-      // 撤销后卖出阶段需要重新编辑：把 visitedMaxPhase 降回到卖出阶段，解除"之前阶段只读"的锁定
+      // 撤销后需要降级 visitedMaxPhase：
+      // - 如果仍有剩余持仓（部分卖出状态），降到持有阶段（索引1），持有和卖出都可编辑
+      // - 如果完全回到未卖出状态（无任何卖出批次），同样降到持有阶段
+      // - 需求：撤销后 recordStatus 降回 draft，visitedMaxPhase 降回卖出阶段，卖出 section 恢复可编辑
+      //   但部分卖出场景下持有阶段也需要可编辑（用户需为剩余持仓添加持有检查）
       if (!res.soldOut && phases) {
+        const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
         const sellingPhaseIdx = phases.findIndex((p) => p.completesRecord);
-        if (sellingPhaseIdx >= 0 && visitedMaxPhase > sellingPhaseIdx) {
-          setVisitedMaxPhase(sellingPhaseIdx);
+        // 有剩余持仓：降到持有阶段（持有+卖出都可编辑）
+        // 无剩余卖出批次（完全撤销）：也降到持有阶段
+        const targetPhase = (res.remainingQty !== undefined && res.remainingQty > 0)
+            ? (holdingPhaseIdx >= 0 ? holdingPhaseIdx : sellingPhaseIdx)
+            : (sellingPhaseIdx >= 0 ? sellingPhaseIdx : holdingPhaseIdx);
+        if (targetPhase >= 0 && visitedMaxPhase > targetPhase) {
+          setVisitedMaxPhase(targetPhase);
         }
       }
       showToast('已撤销最近一笔卖出', 'success');
@@ -664,10 +695,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // Separate fields by priority
   const mainFields = activeSection.fields.filter(
-    (f) => f.priority !== 'optional'
+      (f) => f.priority !== 'optional'
   );
   const optionalFields = activeSection.fields.filter(
-    (f) => f.priority === 'optional'
+      (f) => f.priority === 'optional'
   );
 
   // Clear validation errors when user modifies a field
@@ -703,12 +734,12 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     const validationError = validationErrors.find((err) => err.fieldId === field.id);
     const fieldError = errors[field.id];
     const errorMessage = validationError
-      ? (validationError.message || '此字段为必填项')
-      : fieldError
-        ? typeof fieldError.message === 'string'
-          ? fieldError.message
-          : '此字段为必填项'
-        : undefined;
+        ? (validationError.message || '此字段为必填项')
+        : fieldError
+            ? typeof fieldError.message === 'string'
+                ? fieldError.message
+                : '此字段为必填项'
+            : undefined;
 
     // Compute watchedHintValue for fields with hintDependsOn
     const watchedHintValue = field.hintDependsOn ? watch(field.hintDependsOn) as string | undefined : undefined;
@@ -722,43 +753,43 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       const tableData = watch(field.optionsFrom.fieldId) as Record<string, string>[] | undefined;
       if (Array.isArray(tableData)) {
         dynamicOptions = tableData
-          .map((row) => row[field.optionsFrom!.columnId])
-          .filter((v): v is string => !!v && v.trim() !== '')
-          .map((v) => ({ value: v, label: v }));
+            .map((row) => row[field.optionsFrom!.columnId])
+            .filter((v): v is string => !!v && v.trim() !== '')
+            .map((v) => ({ value: v, label: v }));
       }
     }
 
     const fieldComponent =
-      field.type === 'checkbox' || field.type === 'rating' || field.type === 'table' ? (
-        <FieldRenderer
-          key={field.id}
-          field={field}
-          register={register}
-          error={errorMessage}
-          value={watch(field.id)}
-          onChange={(val) => setValue(field.id, val, { shouldDirty: true })}
-          templateId={template.id}
-          watchedHintValue={watchedHintValue}
-          computedValue={computedValue}
-          dynamicOptions={dynamicOptions}
-        />
-      ) : (
-        <FieldRenderer
-          key={field.id}
-          field={field}
-          register={register}
-          error={errorMessage}
-          templateId={template.id}
-          watchedHintValue={watchedHintValue}
-          computedValue={computedValue}
-          dynamicOptions={dynamicOptions}
-        />
-      );
+        field.type === 'checkbox' || field.type === 'rating' || field.type === 'table' ? (
+            <FieldRenderer
+                key={field.id}
+                field={field}
+                register={register}
+                error={errorMessage}
+                value={watch(field.id)}
+                onChange={(val) => setValue(field.id, val, { shouldDirty: true })}
+                templateId={template.id}
+                watchedHintValue={watchedHintValue}
+                computedValue={computedValue}
+                dynamicOptions={dynamicOptions}
+            />
+        ) : (
+            <FieldRenderer
+                key={field.id}
+                field={field}
+                register={register}
+                error={errorMessage}
+                templateId={template.id}
+                watchedHintValue={watchedHintValue}
+                computedValue={computedValue}
+                dynamicOptions={dynamicOptions}
+            />
+        );
 
     return (
-      <ConditionalField key={field.id} field={field} control={control}>
-        {fieldComponent}
-      </ConditionalField>
+        <ConditionalField key={field.id} field={field} control={control}>
+          {fieldComponent}
+        </ConditionalField>
     );
   };
 
@@ -778,374 +809,374 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const showSidebar = SIDEBAR_TEMPLATES.includes(template.id);
 
   return (
-    <div className={`mx-auto ${template.id === 'annual_review' ? 'max-w-3xl' : 'max-w-3xl'}`}>
-      {/* Smart Reference Sidebar */}
-      {showSidebar && (
-        <ReferenceSidebar
-          templateId={template.id}
-          year={template.id === 'annual_review' ? annualYearValue : undefined}
-        />
-      )}
+      <div className={`mx-auto ${template.id === 'annual_review' ? 'max-w-3xl' : 'max-w-3xl'}`}>
+        {/* Smart Reference Sidebar */}
+        {showSidebar && (
+            <ReferenceSidebar
+                templateId={template.id}
+                year={template.id === 'annual_review' ? annualYearValue : undefined}
+            />
+        )}
 
-      {/* Toast notification */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          isVisible={!!toast}
-          onClose={hideToast}
-        />
-      )}
-      {/* Status bar */}
-      <div className="flex items-center justify-between mb-4 px-1">
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold text-gray-900">{template.name}</h1>
-          {levelInfo && (
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${levelInfo.color}`}>
+        {/* Toast notification */}
+        {toast && (
+            <Toast
+                message={toast.message}
+                type={toast.type}
+                isVisible={!!toast}
+                onClose={hideToast}
+            />
+        )}
+        {/* Status bar */}
+        <div className="flex items-center justify-between mb-4 px-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-gray-900">{template.name}</h1>
+            {levelInfo && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${levelInfo.color}`}>
               {levelInfo.level}
             </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          {saveStatus === 'saving' && (
-            <span className="flex items-center gap-1">
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            {saveStatus === 'saving' && (
+                <span className="flex items-center gap-1">
               <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
               保存中...
             </span>
-          )}
-          {saveStatus === 'saved' && lastSaved && (
-            <span className="flex items-center gap-1">
+            )}
+            {saveStatus === 'saved' && lastSaved && (
+                <span className="flex items-center gap-1">
               <span className="w-2 h-2 bg-green-400 rounded-full" />
               已自动保存 {format(lastSaved, 'HH:mm:ss')}
             </span>
-          )}
-        </div>
-      </div>
-
-      {/* Quality Check Modal */}
-      <QualityCheck
-        isOpen={showQualityCheck}
-        onClose={() => setShowQualityCheck(false)}
-        recordId={currentRecordId.current}
-      />
-
-      {/* Phase indicator (only for multi-phase templates) */}
-      {phases && (
-        <PhaseIndicator
-          phases={phases}
-          currentPhaseIndex={currentPhaseIndex}
-          onPhaseClick={handlePhaseClick}
-          formData={getValues()}
-          recordCreatedAt={initialData ? (initialData._createdAt as string) : undefined}
-        />
-      )}
-
-      {/* 投资清单：同股票代码分笔记录合并后的持仓/卖出明细 */}
-      {template.id === 'investment_checklist' && (
-        <InvestmentMergePanel
-          stockCode={(watch('buy_company_name') as string) || ''}
-          mergedBuyLots={watch('merged_buy_lots') as MergeLot[] | undefined}
-          weightedBuy={watch('buy_price') as string | undefined}
-          totalBuyQty={watch('merged_total_qty') as string | number | undefined}
-          mergedSellLots={watch('merged_sell_lots') as MergeLot[] | undefined}
-          weightedSell={watch('sell_exit_price') as string | undefined}
-          totalSellQty={watch('merged_total_sell_qty') as string | number | undefined}
-          soldOut={watch('sold_out') as boolean | undefined}
-          lastSellDate={watch('last_sell_date') as string | undefined}
-          reviewed={sellReviewed}
-          onUndoLastSell={hasSellLots ? handleUndoLastSell : undefined}
-          mergedSnapshots={watch('merged_snapshots') as MergedSnapshot[] | undefined}
-          emptyText={
-            currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
-              ? '📌 同代码且都在持有阶段的买入记录会自动合并进当前单据（加权买入价 + 逐笔明细）；部分卖出的剩余持仓仍可合并新买入，全部卖出后以最后卖出日期为准 30 天解锁复盘'
-              : undefined
-          }
-        />
-      )}
-
-      {/* Tab navigation */}
-      <div className="mb-6 border-b border-gray-200">
-        <nav
-          className="flex overflow-x-auto -mb-px scrollbar-hide"
-          role="tablist"
-          aria-label="表单部分"
-        >
-          {template.sections.map((section, index) => {
-            const hasErrors = sectionsWithErrors.has(index);
-            const locked = isSectionLocked(index);
-            const readOnly = isSectionReadOnly(index);
-            return (
-              <button
-                key={section.id}
-                type="button"
-                role="tab"
-                aria-selected={index === activeTab}
-                tabIndex={index === activeTab ? 0 : -1}
-                disabled={locked}
-                onClick={() => handleTabChange(index)}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowRight' && index < template.sections.length - 1) {
-                    handleTabChange(index + 1);
-                  } else if (e.key === 'ArrowLeft' && index > 0) {
-                    handleTabChange(index - 1);
-                  }
-                }}
-                className={`whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition ${hasErrors ? 'relative' : ''} ${
-                  locked
-                    ? 'border-transparent text-gray-300 cursor-not-allowed'
-                    : index === activeTab
-                      ? 'border-indigo-500 text-indigo-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {locked && <span className="mr-1">🔒</span>}
-                {readOnly && !locked && <span className="mr-1 opacity-70">✓</span>}
-                {section.title}
-                {hasErrors && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* Active section fields */}
-      <form onSubmit={(e) => e.preventDefault()}>
-        {/* Future phase banner */}
-        {phases && getSectionPhaseIndex(phases, activeTab) > currentPhaseIndex && (() => {
-          const sectionPhaseIdx = getSectionPhaseIndex(phases, activeTab);
-          const sectionPhase = phases[sectionPhaseIdx];
-          const timeLockInfo = sectionPhase ? getPhaseTimeLockInfo(
-            sectionPhase,
-            getValues(),
-            initialData ? (initialData._createdAt as string) : undefined
-          ) : null;
-
-          if (timeLockInfo) {
-            const unlockDateStr = timeLockInfo.unlockDate.getFullYear() < 9000
-              ? timeLockInfo.unlockDate.toISOString().slice(0, 10)
-              : '待确定';
-            const showMarkCompleteBtn = recordStatus === 'draft' && canMarkComplete();
-            return (
-              <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-4 rounded-lg mb-4">
-                <div className="flex items-start gap-3">
-                  <span className="text-lg">🔒</span>
-                  <div>
-                    <p className="font-medium">该阶段尚未解锁</p>
-                    <p className="mt-1">「{sectionPhase.label}」将在 <strong>{unlockDateStr}</strong> 后解锁（还需等待 {timeLockInfo.daysRemaining} 天）</p>
-                    <p className="mt-1 text-xs text-amber-600">让时间帮你获得更客观的视角，再来复盘效果更佳</p>
-                  </div>
-                </div>
-                {showMarkCompleteBtn && (
-                  <div className="mt-3 ml-8">
-                    <button
-                      type="button"
-                      onClick={handleMarkComplete}
-                      className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
-                    >
-                      ✅ 标记为已完成
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          }
-          return (
-            <div className="text-sm text-gray-400 italic bg-gray-50 p-2 rounded mb-4 flex items-center gap-2">
-              <span>📌</span>
-              <span>此部分将在「{phases[sectionPhaseIdx]?.label}」阶段填写</span>
-            </div>
-          );
-        })()}
-
-        {/* Delay notice for phases with activateAfterDays */}
-        {phases && (() => {
-          const sectionPhaseIdx = getSectionPhaseIndex(phases, activeTab);
-          const sectionPhase = phases[sectionPhaseIdx];
-          if (!sectionPhase?.activateAfterDays || !sectionPhase?.activateAfterField) return null;
-          const fieldValue = getValues(sectionPhase.activateAfterField) as string;
-          if (!fieldValue || !fieldValue.trim()) return null;
-          const parsedDate = new Date(fieldValue);
-          if (isNaN(parsedDate.getTime())) return null;
-          const today = new Date();
-          const daysSince = Math.floor((today.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24));
-          const daysRemaining = sectionPhase.activateAfterDays - daysSince;
-          if (daysRemaining > 0) {
-            return (
-              <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg mb-4">
-                ⏰ 建议在卖出 {sectionPhase.activateAfterDays} 天后再进行复盘（距离可复盘还有 {daysRemaining} 天），让时间帮你获得更客观的视角
-              </div>
-            );
-          } else {
-            return (
-              <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-lg mb-4">
-                ✅ 已过 {sectionPhase.activateAfterDays} 天冷静期，现在是复盘的好时机！
-              </div>
-            );
-          }
-        })()}
-
-        {/* Only render form fields if the section is NOT locked */}
-        {!isSectionLocked(activeTab) && (
-          <fieldset disabled={isSectionReadOnly(activeTab)} className="min-w-0 border-0 p-0 m-0">
-            {/* Read-only banner */}
-            {isSectionReadOnly(activeTab) && (
-              <div
-                className={`text-sm p-3 rounded-lg mb-4 border ${
-                  recordStatus === 'completed' && !phases
-                    ? 'bg-green-50 border-green-200 text-green-700'
-                    : 'bg-amber-50 border-amber-200 text-amber-700'
-                }`}
-              >
-                {recordStatus === 'completed' && !phases
-                  ? '✅ 此记录已完成，内容为只读，不能修改'
-                  : `🔒 「${activeSection.title}」阶段已完成并锁定，只能查看，无法修改`}
-              </div>
-            )}
-
-            {activeSection.repeatable ? (
-              <div>
-                <RepeatableSection
-                  section={activeSection}
-                  entries={(watch(`${activeSection.id}_entries`) as Record<string, unknown>[] | undefined) || []}
-                  onChange={(newEntries) => setValue(`${activeSection.id}_entries`, newEntries, { shouldDirty: true })}
-                  templateId={template.id}
-                />
-              </div>
-            ) : (
-              <CollapsibleSection key={activeSection.id} section={activeSection}>
-                {activeSection.description && !activeSection.collapsedByDefault && (
-                  <p className="text-sm text-gray-500 mb-4">{activeSection.description}</p>
-                )}
-
-                {/* Banner: data loaded from previous week's plan */}
-                {loadedFromPrevWeek && activeSection.id === 'weekly_review' && (
-                  <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 rounded-lg mb-4 flex items-center gap-2">
-                    <span>📋</span>
-                    <span>目标已从上周复盘的「下周规划」自动加载，你可以直接编辑调整</span>
-                  </div>
-                )}
-
-                {/* 投资清单：卖出阶段内联持仓上下文（加权成本/剩余持仓/实时盈亏） */}
-                {template.id === 'investment_checklist' && activeSection.id === 'when_selling' && (
-                  <SellContextInline
-                    buyPrice={watch('buy_price')}
-                    totalQty={watch('merged_total_qty') as string | number | undefined}
-                    sellQty={watch('merged_total_sell_qty') as string | number | undefined}
-                    sellPrice={watch('sell_exit_price')}
-                    sellQuantity={watch('sell_quantity')}
-                    currency={(watch('buy_currency') as string) || 'CNY'}
-                  />
-                )}
-
-                {/* 投资清单：卖出复盘量化对比（目标价/止损/持有周期 vs 实际） */}
-                {template.id === 'investment_checklist' && activeSection.id === 'sell_review' && (
-                  <ReviewContextInline
-                    buyPrice={watch('buy_price')}
-                    sellPrice={watch('sell_exit_price')}
-                    targetPrice={watch('buy_target_price_num')}
-                    stopLoss={watch('buy_stop_loss_price')}
-                    buyDate={watch('buy_date') as string | undefined}
-                    lastSellDate={watch('last_sell_date') as string | undefined}
-                    timeframe={watch('buy_timeframe') as string | undefined}
-                  />
-                )}
-
-                {/* Required + Recommended fields */}
-                {mainFields.map((field) => renderFieldItem(field))}
-
-                {/* Optional fields in collapsible group */}
-                <OptionalFieldsGroup count={optionalFields.length}>
-                  {optionalFields.map((field) => renderFieldItem(field))}
-                </OptionalFieldsGroup>
-              </CollapsibleSection>
-            )}
-          </fieldset>
-        )}
-
-        {/* Navigation buttons */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mt-6 pt-4 border-t border-gray-100 gap-3 sm:gap-0">
-          <button
-            type="button"
-            onClick={goPrev}
-            disabled={activeTab === 0}
-            className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg transition ${
-              activeTab === 0
-                ? 'text-gray-300 cursor-not-allowed'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            ← 上一步
-          </button>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={handleDraftSave}
-              disabled={isSectionReadOnly(activeTab)}
-              className={`w-full sm:w-auto px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg transition ${
-                isSectionReadOnly(activeTab)
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              保存草稿
-            </button>
-
-            {recordStatus === 'completed' && !phases ? (
-              // 无阶段模板：记录已完成，整体只读
-              <button
-                type="button"
-                disabled
-                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
-              >
-                ✅ 已完成
-              </button>
-            ) : activeTab === template.sections.length - 1 ? (
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
-              >
-                完成
-              </button>
-            ) : isSectionLocked(activeTab + 1) && recordStatus === 'completed' ? (
-              // 记录已完成，下一阶段仍被时间锁定：显示完成状态
-              <button
-                type="button"
-                disabled
-                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
-              >
-                ✅ 已完成
-              </button>
-            ) : isSectionLocked(activeTab + 1) && canMarkComplete() ? (
-              // completesRecord 阶段（决策后/卖出）已完成、下一阶段被时间锁定：
-              // 在此即可标记记录完成，复盘阶段将在冷静期后解锁
-              <button
-                type="button"
-                onClick={handleMarkComplete}
-                className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
-              >
-                ✅ 完成
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={goNext}
-                disabled={isSectionLocked(activeTab + 1)}
-                className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg transition ${
-                  isSectionLocked(activeTab + 1)
-                    ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
-                    : 'text-white bg-indigo-600 hover:bg-indigo-700'
-                }`}
-              >
-                下一步 →
-              </button>
             )}
           </div>
         </div>
-      </form>
 
-    </div>
+        {/* Quality Check Modal */}
+        <QualityCheck
+            isOpen={showQualityCheck}
+            onClose={() => setShowQualityCheck(false)}
+            recordId={currentRecordId.current}
+        />
+
+        {/* Phase indicator (only for multi-phase templates) */}
+        {phases && (
+            <PhaseIndicator
+                phases={phases}
+                currentPhaseIndex={currentPhaseIndex}
+                onPhaseClick={handlePhaseClick}
+                formData={getValues()}
+                recordCreatedAt={initialData ? (initialData._createdAt as string) : undefined}
+            />
+        )}
+
+        {/* 投资清单：同股票代码分笔记录合并后的持仓/卖出明细 */}
+        {template.id === 'investment_checklist' && (
+            <InvestmentMergePanel
+                stockCode={(watch('buy_company_name') as string) || ''}
+                mergedBuyLots={watch('merged_buy_lots') as MergeLot[] | undefined}
+                weightedBuy={watch('buy_price') as string | undefined}
+                totalBuyQty={watch('merged_total_qty') as string | number | undefined}
+                mergedSellLots={watch('merged_sell_lots') as MergeLot[] | undefined}
+                weightedSell={watch('sell_exit_price') as string | undefined}
+                totalSellQty={watch('merged_total_sell_qty') as string | number | undefined}
+                soldOut={watch('sold_out') as boolean | undefined}
+                lastSellDate={watch('last_sell_date') as string | undefined}
+                reviewed={sellReviewed}
+                onUndoLastSell={hasSellLots ? handleUndoLastSell : undefined}
+                mergedSnapshots={watch('merged_snapshots') as MergedSnapshot[] | undefined}
+                emptyText={
+                  currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
+                      ? '📌 同代码且都在持有阶段的买入记录会自动合并进当前单据（加权买入价 + 逐笔明细）；部分卖出的剩余持仓仍可合并新买入，全部卖出后以最后卖出日期为准 30 天解锁复盘'
+                      : undefined
+                }
+            />
+        )}
+
+        {/* Tab navigation */}
+        <div className="mb-6 border-b border-gray-200">
+          <nav
+              className="flex overflow-x-auto -mb-px scrollbar-hide"
+              role="tablist"
+              aria-label="表单部分"
+          >
+            {template.sections.map((section, index) => {
+              const hasErrors = sectionsWithErrors.has(index);
+              const locked = isSectionLocked(index);
+              const readOnly = isSectionReadOnly(index);
+              return (
+                  <button
+                      key={section.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={index === activeTab}
+                      tabIndex={index === activeTab ? 0 : -1}
+                      disabled={locked}
+                      onClick={() => handleTabChange(index)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowRight' && index < template.sections.length - 1) {
+                          handleTabChange(index + 1);
+                        } else if (e.key === 'ArrowLeft' && index > 0) {
+                          handleTabChange(index - 1);
+                        }
+                      }}
+                      className={`whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition ${hasErrors ? 'relative' : ''} ${
+                          locked
+                              ? 'border-transparent text-gray-300 cursor-not-allowed'
+                              : index === activeTab
+                              ? 'border-indigo-500 text-indigo-600'
+                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                  >
+                    {locked && <span className="mr-1">🔒</span>}
+                    {readOnly && !locked && <span className="mr-1 opacity-70">✓</span>}
+                    {section.title}
+                    {hasErrors && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
+                  </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Active section fields */}
+        <form onSubmit={(e) => e.preventDefault()}>
+          {/* Future phase banner */}
+          {phases && getSectionPhaseIndex(phases, activeTab) > currentPhaseIndex && (() => {
+            const sectionPhaseIdx = getSectionPhaseIndex(phases, activeTab);
+            const sectionPhase = phases[sectionPhaseIdx];
+            const timeLockInfo = sectionPhase ? getPhaseTimeLockInfo(
+                sectionPhase,
+                getValues(),
+                initialData ? (initialData._createdAt as string) : undefined
+            ) : null;
+
+            if (timeLockInfo) {
+              const unlockDateStr = timeLockInfo.unlockDate.getFullYear() < 9000
+                  ? timeLockInfo.unlockDate.toISOString().slice(0, 10)
+                  : '待确定';
+              const showMarkCompleteBtn = recordStatus === 'draft' && canMarkComplete();
+              return (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-4 rounded-lg mb-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-lg">🔒</span>
+                      <div>
+                        <p className="font-medium">该阶段尚未解锁</p>
+                        <p className="mt-1">「{sectionPhase.label}」将在 <strong>{unlockDateStr}</strong> 后解锁（还需等待 {timeLockInfo.daysRemaining} 天）</p>
+                        <p className="mt-1 text-xs text-amber-600">让时间帮你获得更客观的视角，再来复盘效果更佳</p>
+                      </div>
+                    </div>
+                    {showMarkCompleteBtn && (
+                        <div className="mt-3 ml-8">
+                          <button
+                              type="button"
+                              onClick={handleMarkComplete}
+                              className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
+                          >
+                            ✅ 标记为已完成
+                          </button>
+                        </div>
+                    )}
+                  </div>
+              );
+            }
+            return (
+                <div className="text-sm text-gray-400 italic bg-gray-50 p-2 rounded mb-4 flex items-center gap-2">
+                  <span>📌</span>
+                  <span>此部分将在「{phases[sectionPhaseIdx]?.label}」阶段填写</span>
+                </div>
+            );
+          })()}
+
+          {/* Delay notice for phases with activateAfterDays */}
+          {phases && (() => {
+            const sectionPhaseIdx = getSectionPhaseIndex(phases, activeTab);
+            const sectionPhase = phases[sectionPhaseIdx];
+            if (!sectionPhase?.activateAfterDays || !sectionPhase?.activateAfterField) return null;
+            const fieldValue = getValues(sectionPhase.activateAfterField) as string;
+            if (!fieldValue || !fieldValue.trim()) return null;
+            const parsedDate = new Date(fieldValue);
+            if (isNaN(parsedDate.getTime())) return null;
+            const today = new Date();
+            const daysSince = Math.floor((today.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24));
+            const daysRemaining = sectionPhase.activateAfterDays - daysSince;
+            if (daysRemaining > 0) {
+              return (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg mb-4">
+                    ⏰ 建议在卖出 {sectionPhase.activateAfterDays} 天后再进行复盘（距离可复盘还有 {daysRemaining} 天），让时间帮你获得更客观的视角
+                  </div>
+              );
+            } else {
+              return (
+                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-lg mb-4">
+                    ✅ 已过 {sectionPhase.activateAfterDays} 天冷静期，现在是复盘的好时机！
+                  </div>
+              );
+            }
+          })()}
+
+          {/* Only render form fields if the section is NOT locked */}
+          {!isSectionLocked(activeTab) && (
+              <fieldset disabled={isSectionReadOnly(activeTab)} className="min-w-0 border-0 p-0 m-0">
+                {/* Read-only banner */}
+                {isSectionReadOnly(activeTab) && (
+                    <div
+                        className={`text-sm p-3 rounded-lg mb-4 border ${
+                            recordStatus === 'completed' && !phases
+                                ? 'bg-green-50 border-green-200 text-green-700'
+                                : 'bg-amber-50 border-amber-200 text-amber-700'
+                        }`}
+                    >
+                      {recordStatus === 'completed' && !phases
+                          ? '✅ 此记录已完成，内容为只读，不能修改'
+                          : `🔒 「${activeSection.title}」阶段已完成并锁定，只能查看，无法修改`}
+                    </div>
+                )}
+
+                {activeSection.repeatable ? (
+                    <div>
+                      <RepeatableSection
+                          section={activeSection}
+                          entries={(watch(`${activeSection.id}_entries`) as Record<string, unknown>[] | undefined) || []}
+                          onChange={(newEntries) => setValue(`${activeSection.id}_entries`, newEntries, { shouldDirty: true })}
+                          templateId={template.id}
+                      />
+                    </div>
+                ) : (
+                    <CollapsibleSection key={activeSection.id} section={activeSection}>
+                      {activeSection.description && !activeSection.collapsedByDefault && (
+                          <p className="text-sm text-gray-500 mb-4">{activeSection.description}</p>
+                      )}
+
+                      {/* Banner: data loaded from previous week's plan */}
+                      {loadedFromPrevWeek && activeSection.id === 'weekly_review' && (
+                          <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 rounded-lg mb-4 flex items-center gap-2">
+                            <span>📋</span>
+                            <span>目标已从上周复盘的「下周规划」自动加载，你可以直接编辑调整</span>
+                          </div>
+                      )}
+
+                      {/* 投资清单：卖出阶段内联持仓上下文（加权成本/剩余持仓/实时盈亏） */}
+                      {template.id === 'investment_checklist' && activeSection.id === 'when_selling' && (
+                          <SellContextInline
+                              buyPrice={watch('buy_price')}
+                              totalQty={watch('merged_total_qty') as string | number | undefined}
+                              sellQty={watch('merged_total_sell_qty') as string | number | undefined}
+                              sellPrice={watch('sell_exit_price')}
+                              sellQuantity={watch('sell_quantity')}
+                              currency={(watch('buy_currency') as string) || 'CNY'}
+                          />
+                      )}
+
+                      {/* 投资清单：卖出复盘量化对比（目标价/止损/持有周期 vs 实际） */}
+                      {template.id === 'investment_checklist' && activeSection.id === 'sell_review' && (
+                          <ReviewContextInline
+                              buyPrice={watch('buy_price')}
+                              sellPrice={watch('sell_exit_price')}
+                              targetPrice={watch('buy_target_price_num')}
+                              stopLoss={watch('buy_stop_loss_price')}
+                              buyDate={watch('buy_date') as string | undefined}
+                              lastSellDate={watch('last_sell_date') as string | undefined}
+                              timeframe={watch('buy_timeframe') as string | undefined}
+                          />
+                      )}
+
+                      {/* Required + Recommended fields */}
+                      {mainFields.map((field) => renderFieldItem(field))}
+
+                      {/* Optional fields in collapsible group */}
+                      <OptionalFieldsGroup count={optionalFields.length}>
+                        {optionalFields.map((field) => renderFieldItem(field))}
+                      </OptionalFieldsGroup>
+                    </CollapsibleSection>
+                )}
+              </fieldset>
+          )}
+
+          {/* Navigation buttons */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mt-6 pt-4 border-t border-gray-100 gap-3 sm:gap-0">
+            <button
+                type="button"
+                onClick={goPrev}
+                disabled={activeTab === 0}
+                className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg transition ${
+                    activeTab === 0
+                        ? 'text-gray-300 cursor-not-allowed'
+                        : 'text-gray-700 hover:bg-gray-100'
+                }`}
+            >
+              ← 上一步
+            </button>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                  type="button"
+                  onClick={handleDraftSave}
+                  disabled={isSectionReadOnly(activeTab)}
+                  className={`w-full sm:w-auto px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg transition ${
+                      isSectionReadOnly(activeTab)
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+              >
+                保存草稿
+              </button>
+
+              {recordStatus === 'completed' && !phases ? (
+                  // 无阶段模板：记录已完成，整体只读
+                  <button
+                      type="button"
+                      disabled
+                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
+                  >
+                    ✅ 已完成
+                  </button>
+              ) : activeTab === template.sections.length - 1 ? (
+                  <button
+                      type="button"
+                      onClick={handleComplete}
+                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
+                  >
+                    完成
+                  </button>
+              ) : isSectionLocked(activeTab + 1) && recordStatus === 'completed' ? (
+                  // 记录已完成，下一阶段仍被时间锁定：显示完成状态
+                  <button
+                      type="button"
+                      disabled
+                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
+                  >
+                    ✅ 已完成
+                  </button>
+              ) : isSectionLocked(activeTab + 1) && canMarkComplete() ? (
+                  // completesRecord 阶段（决策后/卖出）已完成、下一阶段被时间锁定：
+                  // 在此即可标记记录完成，复盘阶段将在冷静期后解锁
+                  <button
+                      type="button"
+                      onClick={handleMarkComplete}
+                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
+                  >
+                    ✅ 完成
+                  </button>
+              ) : (
+                  <button
+                      type="button"
+                      onClick={goNext}
+                      disabled={isSectionLocked(activeTab + 1)}
+                      className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg transition ${
+                          isSectionLocked(activeTab + 1)
+                              ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
+                              : 'text-white bg-indigo-600 hover:bg-indigo-700'
+                      }`}
+                  >
+                    下一步 →
+                  </button>
+              )}
+            </div>
+          </div>
+        </form>
+
+      </div>
   );
 };
 
