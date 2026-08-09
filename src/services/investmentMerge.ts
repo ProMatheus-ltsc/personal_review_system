@@ -25,134 +25,30 @@ import { v4 as uuidv4 } from 'uuid';
 import { saveRecord } from '@/services/db';
 import type { FormRecord } from '@/types';
 import { isFieldEmpty } from '@/utils/formValidation';
-
-// ============================================================
-// Position + Trade + Trade Review + Position Review 四层模型类型定义
-// ============================================================
-
-/**
- * Trade 层 — 每一次买卖行为
- * BUY 来自 merged_buy_lots（或顶层买入字段），SELL 来自 merged_sell_lots
- * 加仓属于 BUY（重新判断当前价格是否值得买入）
- */
-export interface InvestmentTrade {
-  id: string;
-  type: 'BUY' | 'SELL';
-  date?: string;
-  price: number;
-  qty: number;
-  /** 卖出原因（SELL 才有） */
-  reason?: string;
-  /** 批次标识（同一次卖出编辑会话内多次自动保存去重，SELL 用 batch_id 作为 trade id 保证稳定） */
-  batch_id?: string;
-}
-
-/**
- * Trade Review 层 — 针对某笔交易（BUY/SELL）的独立复盘
- * 每笔 Trade 对应一份 Review，lesson 非空 = 已复盘
- * SELL 复盘：为什么卖？是否过早？
- * BUY 复盘：为什么买？判断依据？（由买入字段派生）
- */
-export interface InvestmentReview {
-  id: string;
-  /** 关联的 Trade id（BUY 或 SELL） */
-  trade_id: string;
-  /** 交易类型（BUY/SELL），用于区分复盘内容 */
-  trade_type?: 'BUY' | 'SELL';
-  /** 复盘日期 */
-  reviewed_at?: string;
-  /** 买入逻辑验证 */
-  thesis_valid?: string;
-  /** 做对了什么 */
-  what_was_right?: string;
-  /** 做错了什么 */
-  what_was_wrong?: string;
-  /** 核心教训（非空 = 已复盘） */
-  lesson?: string;
-  /** 同样的机会再来，你还会做吗 */
-  would_repeat?: string;
-  /** 下次如何调整 */
-  adjustment?: string;
-  /** 盈亏结果 */
-  profit_result?: string;
-  /** 卖出后走势（过早卖出识别，SELL 才有） */
-  post_sell_trend?: string;
-}
-
-/**
- * Position Review 层 — 针对整个投资周期的完整复盘
- * 仅在 Position 清仓（sold_out）后生成，一个 Position 对应一份 Position Review
- * 关注：投资逻辑是否成立、执行过程、仓位管理、最终结果
- */
-export interface PositionReview {
-  id: string;
-  /** 复盘日期 */
-  reviewed_at?: string;
-  /** 原始投资逻辑回顾 */
-  original_thesis?: string;
-  /** 逻辑验证结果 */
-  thesis_result?: string;
-  /** 最大成功 */
-  biggest_success?: string;
-  /** 最大失误 */
-  biggest_mistake?: string;
-  /** 核心教训（非空 = 已复盘） */
-  lesson?: string;
-  /** 投资总结 */
-  conclusion?: string;
-}
-
-/** TradeReview 别名（V2 概念对齐） */
-export type TradeReview = InvestmentReview;
-
-/**
- * sell_review_entries（表单可重复段）字段 ↔ TradeReview 字段映射
- * 用于 syncReviewsFromEntries 双向同步
- */
-export const SELL_REVIEW_FIELD_MAP: Record<string, keyof InvestmentReview> = {
-  sell_review_date: 'reviewed_at',
-  sell_thesis_valid: 'thesis_valid',
-  sell_what_was_right: 'what_was_right',
-  sell_what_was_wrong: 'what_was_wrong',
-  sell_lesson: 'lesson',
-  sell_would_repeat: 'would_repeat',
-  sell_adjustment: 'adjustment',
-  sell_profit_result: 'profit_result',
-  sell_review_trade_id: 'trade_id',
-  sell_post_sell_trend: 'post_sell_trend',
-};
-
-/**
- * position_review 顶层字段 ↔ PositionReview 字段映射
- * 用于 syncPositionReview 双向同步
- */
-export const POSITION_REVIEW_FIELD_MAP: Record<string, keyof PositionReview> = {
-  position_review_date: 'reviewed_at',
-  position_original_thesis: 'original_thesis',
-  position_thesis_result: 'thesis_result',
-  position_biggest_success: 'biggest_success',
-  position_biggest_mistake: 'biggest_mistake',
-  position_lesson: 'lesson',
-  position_conclusion: 'conclusion',
-};
-
-/** TradeReview 骨架字段（用于判断哪些字段属于复盘内容，清空即回骨架） */
-const REVIEW_CONTENT_FIELDS: (keyof InvestmentReview)[] = [
-  'reviewed_at', 'thesis_valid', 'what_was_right', 'what_was_wrong',
-  'lesson', 'would_repeat', 'adjustment', 'profit_result', 'post_sell_trend',
-];
-
-
-interface LotInput {
-  date?: string;
-  price?: string | number;
-  qty?: string | number;
-  reason?: string;
-  /** 当前编辑会话的批次标识（同一笔卖出多次自动保存据此更新同一条，而非按取值去重） */
-  batch_id?: string;
-}
-
-export interface SellLot extends LotInput {}
+// 四层模型类型与字段映射（独立文件，见 investmentMergeTypes.ts）
+import {
+  SELL_REVIEW_FIELD_MAP,
+  POSITION_REVIEW_FIELD_MAP,
+  REVIEW_CONTENT_FIELDS,
+} from '@/services/investmentMergeTypes';
+import type {
+  InvestmentTrade,
+  InvestmentReview,
+  PositionReview,
+  SellLot,
+  LotInput,
+} from '@/services/investmentMergeTypes';
+export type {
+  InvestmentTrade,
+  InvestmentReview,
+  PositionReview,
+  TradeReview,
+  SellLot,
+} from '@/services/investmentMergeTypes';
+export {
+  SELL_REVIEW_FIELD_MAP,
+  POSITION_REVIEW_FIELD_MAP,
+} from '@/services/investmentMergeTypes';
 
 // ============================================================
 // Trade + Review 读取与判断函数
@@ -243,175 +139,150 @@ export function findPendingReviewTrades(r: FormRecord): InvestmentTrade[] {
  * - 已有 merged_reviews 但缺少某 SELL Trade 的 review → 补充骨架
  * 多次调用结果一致（幂等），不破坏已有数据。
  */
+
+/** 从 merged_buy_lots（或顶层买入字段）派生 BUY trades（无 trades 时调用） */
+function deriveBuyTrades(result: Record<string, unknown>): InvestmentTrade[] {
+  const trades: InvestmentTrade[] = [];
+  const buyLots = Array.isArray(result.merged_buy_lots) ? (result.merged_buy_lots as LotInput[]) : [];
+  if (buyLots.length > 0) {
+    buyLots.forEach((lot, i) => {
+      const p = toNum(lot.price);
+      const q = toNum(lot.qty);
+      if (p !== undefined && q !== undefined) {
+        trades.push({ id: `buy_${i}_${uuidv4().slice(0, 8)}`, type: 'BUY', date: lot.date, price: p, qty: q });
+      }
+    });
+  } else {
+    const p = toNum(result.buy_price);
+    const q = toNum(result.buy_quantity);
+    if (p !== undefined && q !== undefined) {
+      trades.push({ id: `buy_0_${uuidv4().slice(0, 8)}`, type: 'BUY', date: result.buy_date as string | undefined, price: p, qty: q });
+    }
+  }
+  return trades;
+}
+
+/** 从 merged_sell_lots 派生 SELL trades：按 batch_id 去重，仅追加新增批次（保留已有 trades） */
+function deriveSellTradesFromLots(result: Record<string, unknown>, base: InvestmentTrade[]): InvestmentTrade[] {
+  const trades = [...base];
+  const sellLots = Array.isArray(result.merged_sell_lots) ? (result.merged_sell_lots as SellLot[]) : [];
+  const existingBatchIds = new Set(trades.filter((t) => t.type === 'SELL').map((t) => t.batch_id));
+  sellLots.forEach((lot) => {
+    if (lot.batch_id && existingBatchIds.has(lot.batch_id)) return;
+    const p = toNum(lot.price);
+    const q = toNum(lot.qty);
+    if (p !== undefined && q !== undefined) {
+      trades.push({
+        id: lot.batch_id || `sell_${uuidv4().slice(0, 8)}`,
+        type: 'SELL',
+        date: lot.date,
+        price: p,
+        qty: q,
+        reason: lot.reason,
+        batch_id: lot.batch_id,
+      });
+    }
+  });
+  return trades;
+}
+
+/**
+ * 卖出单（record_role=sell）：自身即一笔卖出决策，但数据里没有 merged_sell_lots
+ * （那是仓位单的汇总字段）→ 从顶层卖出字段派生 SELL Trade。
+ * 固定 id 'sell_self' 保证幂等（单笔卖出单只有这一笔卖出），供卖出复盘自动关联。
+ */
+function maybeDeriveSellSelf(result: Record<string, unknown>, trades: InvestmentTrade[]): InvestmentTrade[] {
+  if (result.record_role !== 'sell') return trades;
+  const sp = toNum(result.sell_exit_price);
+  const sq = toNum(result.sell_quantity);
+  if (sp === undefined || sq === undefined) return trades;
+  if (trades.some((t) => t.type === 'SELL' && t.id === 'sell_self')) return trades;
+  return [
+    ...trades,
+    {
+      id: 'sell_self',
+      type: 'SELL',
+      date: result.sell_date as string | undefined,
+      price: sp,
+      qty: sq,
+      reason: result.sell_reason as string | undefined,
+    },
+  ];
+}
+
+/** 从 sell_review_entries 按序构建 SELL review（旧单据首次派生时使用） */
+function deriveSellReviewsFromEntries(result: Record<string, unknown>, sellTrades: InvestmentTrade[]): InvestmentReview[] {
+  const entries = Array.isArray(result.sell_review_entries)
+      ? (result.sell_review_entries as Record<string, unknown>[])
+      : [];
+  return sellTrades.map((trade, i) => {
+    const entry = entries[i];
+    const review: InvestmentReview = { id: uuidv4(), trade_id: trade.id, trade_type: 'SELL' };
+    if (entry) {
+      Object.entries(SELL_REVIEW_FIELD_MAP).forEach(([entryField, reviewField]) => {
+        const val = entry[entryField];
+        if (val !== undefined && !isFieldEmpty(val)) {
+          (review as unknown as Record<string, unknown>)[reviewField] = val;
+        }
+      });
+    }
+    return review;
+  });
+}
+
+/** 派生 merged_reviews：旧单据从 entries 构建 + BUY 骨架；已有 reviews 做对账（补骨架/移除孤儿） */
+function deriveReviews(result: Record<string, unknown>, trades: InvestmentTrade[]): InvestmentReview[] {
+  const sellTrades = trades.filter((t) => t.type === 'SELL');
+  const buyTrades = trades.filter((t) => t.type === 'BUY');
+  const existing = Array.isArray(result.merged_reviews) ? [...(result.merged_reviews as InvestmentReview[])] : [];
+
+  if (existing.length === 0 && (sellTrades.length > 0 || buyTrades.length > 0)) {
+    // 旧单据：SELL reviews 从 entries 按序关联 + BUY 骨架（内容由买入字段派生，lesson 暂空）
+    return [
+      ...deriveSellReviewsFromEntries(result, sellTrades),
+      ...buyTrades.map((trade) => ({ id: uuidv4(), trade_id: trade.id, trade_type: 'BUY' as const })),
+    ];
+  }
+
+  // 已有 reviews：对账 — 移除孤儿 review，补充缺失的 review 骨架
+  const allTradeIds = new Set(trades.map((t) => t.id));
+  const kept = existing.filter((rv) => allTradeIds.has(rv.trade_id));
+  trades.forEach((trade) => {
+    if (!kept.some((rv) => rv.trade_id === trade.id)) {
+      kept.push({ id: uuidv4(), trade_id: trade.id, trade_type: trade.type });
+    }
+  });
+  return kept;
+}
+
+/** Position Review 层：清仓且有卖出价时创建骨架，未清仓时移除（幂等） */
+function ensurePositionReviewForClosed(result: Record<string, unknown>): void {
+  const isClosed = result.sold_out === true ||
+      (result.sell_exit_price !== undefined && result.sell_exit_price !== null &&
+          String(result.sell_exit_price).trim() !== '');
+  if (isClosed && !result.merged_position_review) {
+    result.merged_position_review = { id: uuidv4() } as PositionReview;
+  } else if (!isClosed && result.merged_position_review) {
+    delete result.merged_position_review;
+  }
+}
+
 export function ensureTradesInitialized(data: Record<string, unknown>): Record<string, unknown> {
   const result = { ...data };
 
-  // --- 派生 merged_trades ---
-  let trades = Array.isArray(result.merged_trades) ? [...(result.merged_trades as InvestmentTrade[])] : [];
-
-  if (trades.length === 0) {
-    // 从 merged_buy_lots 派生 BUY trades
-    const buyLots = Array.isArray(result.merged_buy_lots) ? (result.merged_buy_lots as LotInput[]) : [];
-    if (buyLots.length > 0) {
-      buyLots.forEach((lot, i) => {
-        const p = toNum(lot.price);
-        const q = toNum(lot.qty);
-        if (p !== undefined && q !== undefined) {
-          trades.push({
-            id: `buy_${i}_${uuidv4().slice(0, 8)}`,
-            type: 'BUY',
-            date: lot.date,
-            price: p,
-            qty: q,
-          });
-        }
-      });
-    } else {
-      // 顶层买入字段
-      const p = toNum(result.buy_price);
-      const q = toNum(result.buy_quantity);
-      if (p !== undefined && q !== undefined) {
-        trades.push({
-          id: `buy_0_${uuidv4().slice(0, 8)}`,
-          type: 'BUY',
-          date: result.buy_date as string | undefined,
-          price: p,
-          qty: q,
-        });
-      }
-    }
-
-    // 从 merged_sell_lots 派生 SELL trades（用 batch_id 作为 trade id 保证稳定）
-    const sellLots = Array.isArray(result.merged_sell_lots) ? (result.merged_sell_lots as SellLot[]) : [];
-    sellLots.forEach((lot) => {
-      const p = toNum(lot.price);
-      const q = toNum(lot.qty);
-      if (p !== undefined && q !== undefined) {
-        trades.push({
-          id: lot.batch_id || `sell_${uuidv4().slice(0, 8)}`,
-          type: 'SELL',
-          date: lot.date,
-          price: p,
-          qty: q,
-          reason: lot.reason,
-          batch_id: lot.batch_id,
-        });
-      }
-    });
-  } else {
-    // 已有 trades：对账 — 补充新增的 sell lot 对应的 SELL Trade
-    const sellLots = Array.isArray(result.merged_sell_lots) ? (result.merged_sell_lots as SellLot[]) : [];
-    const existingBatchIds = new Set(trades.filter((t) => t.type === 'SELL').map((t) => t.batch_id));
-    sellLots.forEach((lot) => {
-      if (lot.batch_id && existingBatchIds.has(lot.batch_id)) return;
-      const p = toNum(lot.price);
-      const q = toNum(lot.qty);
-      if (p !== undefined && q !== undefined) {
-        const tradeId = lot.batch_id || `sell_${uuidv4().slice(0, 8)}`;
-        trades.push({
-          id: tradeId,
-          type: 'SELL',
-          date: lot.date,
-          price: p,
-          qty: q,
-          reason: lot.reason,
-          batch_id: lot.batch_id,
-        });
-      }
-    });
-  }
-
-  // 卖出单（record_role=sell）：自身即一笔卖出决策，但数据里没有 merged_sell_lots
-  // （那是仓位单的汇总字段）→ 从顶层卖出字段派生 SELL Trade。
-  // 固定 id 'sell_self' 保证幂等（单笔卖出单只有这一笔卖出），供卖出复盘自动关联。
-  if (result.record_role === 'sell') {
-    const sp = toNum(result.sell_exit_price);
-    const sq = toNum(result.sell_quantity);
-    if (sp !== undefined && sq !== undefined && !trades.some((t) => t.type === 'SELL' && t.id === 'sell_self')) {
-      trades.push({
-        id: 'sell_self',
-        type: 'SELL',
-        date: result.sell_date as string | undefined,
-        price: sp,
-        qty: sq,
-        reason: result.sell_reason as string | undefined,
-      });
-    }
-  }
-
-  result.merged_trades = trades;
+  // --- 派生 merged_trades（BUY 首次派生 + SELL 按批次去重追加 + 卖出单 sell_self）---
+  const existing = Array.isArray(result.merged_trades) ? [...(result.merged_trades as InvestmentTrade[])] : [];
+  const trades = existing.length === 0
+      ? [...deriveBuyTrades(result), ...deriveSellTradesFromLots(result, [])]
+      : deriveSellTradesFromLots(result, existing);
+  const finalTrades = maybeDeriveSellSelf(result, trades);
+  result.merged_trades = finalTrades;
 
   // --- 派生 merged_reviews（Trade Review 层，覆盖 BUY + SELL）---
-  let reviews = Array.isArray(result.merged_reviews) ? [...(result.merged_reviews as InvestmentReview[])] : [];
-  const allTrades = trades;
-  const sellTrades = trades.filter((t) => t.type === 'SELL');
-  const buyTrades = trades.filter((t) => t.type === 'BUY');
-
-  if (reviews.length === 0 && (sellTrades.length > 0 || buyTrades.length > 0)) {
-    // 旧单据：SELL reviews 从 sell_review_entries 按序关联
-    const entries = Array.isArray(result.sell_review_entries)
-      ? (result.sell_review_entries as Record<string, unknown>[])
-      : [];
-
-    // SELL Trade Reviews
-    sellTrades.forEach((trade, i) => {
-      const entry = entries[i];
-      const review: InvestmentReview = {
-        id: uuidv4(),
-        trade_id: trade.id,
-        trade_type: 'SELL',
-      };
-      if (entry) {
-        Object.entries(SELL_REVIEW_FIELD_MAP).forEach(([entryField, reviewField]) => {
-          const val = entry[entryField];
-          if (val !== undefined && !isFieldEmpty(val)) {
-            (review as unknown as Record<string, unknown>)[reviewField] = val;
-          }
-        });
-      }
-      reviews.push(review);
-    });
-
-    // BUY Trade Reviews（骨架 — BUY 复盘内容由买入字段派生，lesson 暂为空）
-    buyTrades.forEach((trade) => {
-      reviews.push({
-        id: uuidv4(),
-        trade_id: trade.id,
-        trade_type: 'BUY',
-      });
-    });
-  } else {
-    // 已有 reviews：对账 — 补充缺失的 review 骨架（BUY + SELL），移除孤儿 review
-    const allTradeIds = new Set(allTrades.map((t) => t.id));
-    reviews = reviews.filter((rv) => allTradeIds.has(rv.trade_id));
-
-    allTrades.forEach((trade) => {
-      if (!reviews.some((rv) => rv.trade_id === trade.id)) {
-        reviews.push({
-          id: uuidv4(),
-          trade_id: trade.id,
-          trade_type: trade.type,
-        });
-      }
-    });
-  }
-
-  result.merged_reviews = reviews;
+  result.merged_reviews = deriveReviews(result, finalTrades);
 
   // --- 派生 merged_position_review（Position Review 层，仅清仓时生成）---
-  const isClosed = result.sold_out === true ||
-    (result.sell_exit_price !== undefined && result.sell_exit_price !== null &&
-     String(result.sell_exit_price).trim() !== '');
-
-  if (isClosed && !result.merged_position_review) {
-    // 清仓但无 PositionReview → 创建骨架
-    result.merged_position_review = {
-      id: uuidv4(),
-    } as PositionReview;
-  } else if (!isClosed && result.merged_position_review) {
-    // 未清仓但有 PositionReview（撤销卖出后回退）→ 移除
-    delete result.merged_position_review;
-  }
+  ensurePositionReviewForClosed(result);
 
   return result;
 }
@@ -427,72 +298,76 @@ export function ensureTradesInitialized(data: Record<string, unknown>): Record<s
  * - BUY trade reviews 保留不动（内容由买入字段派生）
  * 该函数不修改 merged_trades，只维护 merged_reviews 与 entries 的一致性。
  */
+/** 确保每个 SELL/BUY trade 都有 review 骨架，并移除孤儿 review（对应 trade 已不存在） */
+function ensureAllTradeReviews(trades: InvestmentTrade[], reviews: InvestmentReview[]): InvestmentReview[] {
+  const kept = [...reviews];
+  const allTradeIds = new Set(trades.map((t) => t.id));
+  const filtered = kept.filter((rv) => allTradeIds.has(rv.trade_id));
+  trades.forEach((trade) => {
+    if (!filtered.some((rv) => rv.trade_id === trade.id)) {
+      filtered.push({ id: uuidv4(), trade_id: trade.id, trade_type: trade.type });
+    }
+  });
+  return filtered;
+}
+
+/** 用 entry（或顶层字段）更新 review 的映射字段；字段为空则清空对应 review 字段 */
+function syncMappedFields(source: Record<string, unknown>, review: InvestmentReview, skipFields: string[] = []) {
+  Object.entries(SELL_REVIEW_FIELD_MAP).forEach(([entryField, reviewField]) => {
+    if (skipFields.includes(entryField)) return;
+    const val = source[entryField];
+    if (val !== undefined && !isFieldEmpty(val)) {
+      (review as unknown as Record<string, unknown>)[reviewField] = val;
+    } else {
+      delete (review as unknown as Record<string, unknown>)[reviewField];
+    }
+  });
+}
+
+/** 清空 review 的复盘内容字段（回骨架，保留 trade 关联） */
+function clearReviewContent(review: InvestmentReview) {
+  REVIEW_CONTENT_FIELDS.forEach((field) => {
+    delete (review as unknown as Record<string, unknown>)[field];
+  });
+}
+
+/**
+ * 将 sell_review_entries（表单可重复段）按 trade_id 同步到 merged_reviews。
+ * - 有对应 entry 的 SELL review：用 entry 字段更新 review（SELL_REVIEW_FIELD_MAP 映射）
+ * - 无对应 entry 的 SELL review（删除了条目）：清空复盘内容字段，回骨架
+ * - BUY trade reviews 保留不动（内容由买入字段派生）
+ * 该函数不修改 merged_trades，只维护 merged_reviews 与 entries 的一致性。
+ */
 export function syncReviewsFromEntries(data: Record<string, unknown>): Record<string, unknown> {
   const result = { ...data };
   const trades = Array.isArray(result.merged_trades) ? (result.merged_trades as InvestmentTrade[]) : [];
   const sellTrades = trades.filter((t) => t.type === 'SELL');
-  const buyTrades = trades.filter((t) => t.type === 'BUY');
   const entries = Array.isArray(result.sell_review_entries)
     ? (result.sell_review_entries as Record<string, unknown>[])
     : [];
 
   let reviews = Array.isArray(result.merged_reviews) ? [...(result.merged_reviews as InvestmentReview[])] : [];
+  // 补全 trade 骨架 + 移除孤儿
+  reviews = ensureAllTradeReviews(trades, reviews);
 
-  // 确保每个 SELL trade 都有 review
+  // 按 trade_id 同步 SELL reviews（BUY reviews 不同步，内容由买入字段派生）
   sellTrades.forEach((trade) => {
-    if (!reviews.some((rv) => rv.trade_id === trade.id)) {
-      reviews.push({ id: uuidv4(), trade_id: trade.id, trade_type: 'SELL' });
-    }
-  });
-
-  // 确保每个 BUY trade 都有 review 骨架
-  buyTrades.forEach((trade) => {
-    if (!reviews.some((rv) => rv.trade_id === trade.id)) {
-      reviews.push({ id: uuidv4(), trade_id: trade.id, trade_type: 'BUY' });
-    }
-  });
-
-  // 移除孤儿 review（对应 trade 已不存在）
-  const allTradeIds = new Set(trades.map((t) => t.id));
-  reviews = reviews.filter((rv) => allTradeIds.has(rv.trade_id));
-
-  // 按 trade_id 同步 SELL reviews（BUY reviews 不同步）
-  reviews.forEach((review) => {
-    if (review.trade_type === 'BUY') return; // BUY review 跳过同步
+    const review = reviews.find((rv) => rv.trade_id === trade.id);
+    if (!review) return;
 
     // 卖出单（record_role=sell）：单次复盘，内容存顶层 sell_review_* 字段，
     // 自动关联到本单唯一的 SELL Trade（id='sell_self'），无需用户手动选择
     if (result.record_role === 'sell' && review.trade_id === 'sell_self') {
-      Object.entries(SELL_REVIEW_FIELD_MAP).forEach(([entryField, reviewField]) => {
-        if (entryField === 'sell_review_trade_id') return; // 自动关联，无顶层对应字段
-        const val = result[entryField];
-        if (val !== undefined && !isFieldEmpty(val)) {
-          (review as unknown as Record<string, unknown>)[reviewField] = val;
-        } else {
-          delete (review as unknown as Record<string, unknown>)[reviewField];
-        }
-      });
+      syncMappedFields(result, review, ['sell_review_trade_id']);
       return;
     }
 
-    // 仓位单/旧模型：按 sell_review_entries 条目同步
+    // 仓位单/旧模型：按 sell_review_entries 条目同步（无条目则清空内容回骨架）
     const entry = entries.find((e) => e.sell_review_trade_id === review.trade_id);
     if (entry) {
-      // 用 entry 字段更新 review
-      Object.entries(SELL_REVIEW_FIELD_MAP).forEach(([entryField, reviewField]) => {
-        const val = entry[entryField];
-        if (val !== undefined && !isFieldEmpty(val)) {
-          (review as unknown as Record<string, unknown>)[reviewField] = val;
-        } else {
-          // entry 字段为空 → 清空 review 对应字段
-          delete (review as unknown as Record<string, unknown>)[reviewField];
-        }
-      });
+      syncMappedFields(entry, review);
     } else {
-      // 无对应 entry → 清空复盘内容，回骨架
-      REVIEW_CONTENT_FIELDS.forEach((field) => {
-        delete (review as unknown as Record<string, unknown>)[field];
-      });
+      clearReviewContent(review);
     }
   });
 
@@ -659,6 +534,48 @@ export function weightedAvgBuyDate(
  * - 顶层加权 buy_price / sell_exit_price / sell_date（最后卖出日）
  * 返回新的仓位单数据（不保存，由调用方决定）。
  */
+/** 从买入单记录汇总买入批次（含总数量与总成本）；忽略无价/无数量/数量 ≤0 的记录 */
+function collectBuyLotsFromRecords(buyRecords: FormRecord[]): { lots: LotInput[]; totalQty: number; cost: number } {
+  const lots: LotInput[] = [];
+  let totalQty = 0;
+  let cost = 0;
+  buyRecords.forEach((r) => {
+    const p = toNum(r.data.buy_price);
+    const q = toNum(r.data.buy_quantity);
+    if (p !== undefined && q !== undefined && q > 0) {
+      lots.push({ date: (r.data.buy_date as string) || undefined, price: p, qty: q, reason: String(r.data.buy_thesis ?? '') });
+      cost += p * q;
+      totalQty += q;
+    }
+  });
+  return { lots, totalQty, cost };
+}
+
+/** 从卖出单记录汇总卖出批次（含总数量与总成本）；忽略无价/无数量/数量 ≤0 的记录 */
+function collectSellLotsFromRecords(sellRecords: FormRecord[]): { lots: LotInput[]; totalQty: number; cost: number } {
+  const lots: LotInput[] = [];
+  let totalQty = 0;
+  let cost = 0;
+  sellRecords.forEach((r) => {
+    const p = toNum(r.data.sell_exit_price);
+    const q = toNum(r.data.sell_quantity);
+    if (p !== undefined && q !== undefined && q > 0) {
+      lots.push({ date: (r.data.sell_date as string) || undefined, price: p, qty: q, reason: String(r.data.sell_reason ?? '') });
+      cost += p * q;
+      totalQty += q;
+    }
+  });
+  return { lots, totalQty, cost };
+}
+
+/**
+ * 从关联的买入单/卖出单同步仓位单汇总数据：
+ * - merged_buy_lots（逐笔买入明细，来自买入单的买入前段字段）
+ * - merged_sell_lots（逐笔卖出明细，来自卖出单的卖出段字段）
+ * - merged_total_qty / remaining_qty / sold_out / merged_total_sell_qty
+ * - 顶层加权 buy_price / sell_exit_price / sell_date（最后卖出日）
+ * 返回新的仓位单数据（不保存，由调用方决定）。
+ */
 export function syncPositionFromLinked(
   position: FormRecord,
   buyRecords: FormRecord[],
@@ -666,65 +583,33 @@ export function syncPositionFromLinked(
 ): FormRecord {
   const data: Record<string, unknown> = { ...position.data };
 
-  // --- 买入侧：从买入单汇总 ---
-  const buyLots: { date?: string; price: string | number; qty: string | number; reason?: string }[] = [];
-  let totalBuyQty = 0;
-  let buyCost = 0;
-  buyRecords.forEach((r) => {
-    const p = toNum(r.data.buy_price);
-    const q = toNum(r.data.buy_quantity);
-    if (p !== undefined && q !== undefined && q > 0) {
-      buyLots.push({
-        date: (r.data.buy_date as string) || undefined,
-        price: p,
-        qty: q,
-        reason: String(r.data.buy_thesis ?? ''),
-      });
-      buyCost += p * q;
-      totalBuyQty += q;
-    }
-  });
-  data.merged_buy_lots = buyLots;
-  data.merged_total_qty = totalBuyQty;
-  if (totalBuyQty > 0) {
-    data.buy_price = (buyCost / totalBuyQty).toFixed(4);
+  // --- 买入侧：从买入单汇总（加权平均价 + 首笔买入日期）---
+  const buy = collectBuyLotsFromRecords(buyRecords);
+  data.merged_buy_lots = buy.lots;
+  data.merged_total_qty = buy.totalQty;
+  if (buy.totalQty > 0) {
+    data.buy_price = (buy.cost / buy.totalQty).toFixed(4);
     data.buy_date = buyRecords.map((r) => String(r.data.buy_date ?? '')).filter(Boolean).sort()[0] ?? '';
   }
 
-  // --- 卖出侧：从卖出单汇总 ---
-  const sellLots: { date?: string; price: string | number; qty: string | number; reason?: string }[] = [];
-  let totalSellQty = 0;
-  let sellCost = 0;
-  sellRecords.forEach((r) => {
-    const p = toNum(r.data.sell_exit_price);
-    const q = toNum(r.data.sell_quantity);
-    if (p !== undefined && q !== undefined && q > 0) {
-      sellLots.push({
-        date: (r.data.sell_date as string) || undefined,
-        price: p,
-        qty: q,
-        reason: String(r.data.sell_reason ?? ''),
-      });
-      sellCost += p * q;
-      totalSellQty += q;
-    }
-  });
-  data.merged_sell_lots = sellLots;
-  data.merged_total_sell_qty = totalSellQty;
-  if (totalSellQty > 0) {
-    data.sell_exit_price = (sellCost / totalSellQty).toFixed(4);
+  // --- 卖出侧：从卖出单汇总（加权卖出价 + 最后卖出日）---
+  const sell = collectSellLotsFromRecords(sellRecords);
+  data.merged_sell_lots = sell.lots;
+  data.merged_total_sell_qty = sell.totalQty;
+  if (sell.totalQty > 0) {
+    data.sell_exit_price = (sell.cost / sell.totalQty).toFixed(4);
     const lastSellDate = sellRecords.map((r) => String(r.data.sell_date ?? '')).filter(Boolean).sort().pop();
     if (lastSellDate) data.last_sell_date = lastSellDate;
-    // 顶层 sell_date 恢复为最后卖出日（用于 30 天复盘解锁）
+    // 顶层 sell_date 恢复为最后卖出日（用于复盘解锁基准）
     data.sell_date = lastSellDate || '';
   }
 
-  // --- 持仓状态 ---
-  const remaining = totalBuyQty - totalSellQty;
-  const soldOut = totalBuyQty > 0 && remaining === 0;
+  // --- 持仓状态：剩余持仓 / 清仓标记 / 卖出状态 ---
+  const remaining = buy.totalQty - sell.totalQty;
+  const soldOut = buy.totalQty > 0 && remaining === 0;
   data.remaining_qty = remaining > 0 ? remaining : 0;
   data.sold_out = soldOut;
-  data.sell_status = soldOut ? 'full' : totalSellQty > 0 ? 'partial' : '';
+  data.sell_status = soldOut ? 'full' : sell.totalQty > 0 ? 'partial' : '';
 
   return { ...position, data, updatedAt: new Date().toISOString() };
 }
@@ -770,6 +655,46 @@ export async function linkNewRecord(
   return { position, buyRecord: role === RECORD_ROLE.BUY ? newRecord : undefined, sellRecord: role === RECORD_ROLE.SELL ? newRecord : undefined };
 }
 
+/** 建立买入单 ↔ 仓位单的双向关联并保存（幂等：已关联则跳过） */
+async function linkBuyToPosition(buyRecord: FormRecord, position: FormRecord): Promise<FormRecord> {
+  buyRecord.data.position_record_id = position.id;
+  const linked = Array.isArray(position.data.linked_buy_record_ids)
+      ? [...(position.data.linked_buy_record_ids as string[])]
+      : [];
+  if (!linked.includes(buyRecord.id)) linked.push(buyRecord.id);
+  position.data.linked_buy_record_ids = linked;
+  await saveRecord(buyRecord);
+  await saveRecord(position);
+  return position;
+}
+
+/** 创建仓位单骨架（仅记录代码与首笔买入关联，汇总由 syncPositionFromLinked 刷新） */
+function createPositionSkeleton(code: string, buyRecord: FormRecord): FormRecord {
+  const now = new Date().toISOString();
+  return {
+    id: uuidv4(),
+    templateId: 'investment_checklist',
+    title: `投资检查清单 - ${code} 持有仓位`,
+    data: {
+      record_role: RECORD_ROLE.POSITION,
+      buy_company_name: code,
+      buy_currency: buyRecord.data.buy_currency || 'CNY',
+      linked_buy_record_ids: [buyRecord.id],
+      linked_sell_record_ids: [],
+      merged_buy_lots: [],
+      merged_sell_lots: [],
+      merged_total_qty: 0,
+      merged_total_sell_qty: 0,
+      remaining_qty: 0,
+      sold_out: false,
+      sell_status: '',
+    },
+    status: 'draft',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 /**
  * 买入单完成后同步创建仓位单（幂等）：
  * - 已存在同代码仓位单 → 复用并建立关联
@@ -792,46 +717,7 @@ export async function ensurePositionForBuyRecord(
     if (existing) return existing;
   }
 
-  // 查同代码仓位单（可能此前已通过其他买入单创建）
-  const position = findPositionByCode(allRecords, code);
-  if (position) {
-    buyRecord.data.position_record_id = position.id;
-    const linked = Array.isArray(position.data.linked_buy_record_ids)
-      ? [...(position.data.linked_buy_record_ids as string[])]
-      : [];
-    if (!linked.includes(buyRecord.id)) linked.push(buyRecord.id);
-    position.data.linked_buy_record_ids = linked;
-    await saveRecord(buyRecord);
-    await saveRecord(position);
-    return position;
-  }
-
-  // 无仓位单 → 创建骨架
-  const now = new Date().toISOString();
-  const newPosition: FormRecord = {
-    id: uuidv4(),
-    templateId: 'investment_checklist',
-    title: `投资检查清单 - ${code} 持有仓位`,
-    data: {
-      record_role: RECORD_ROLE.POSITION,
-      buy_company_name: code,
-      buy_currency: buyRecord.data.buy_currency || 'CNY',
-      linked_buy_record_ids: [buyRecord.id],
-      linked_sell_record_ids: [],
-      merged_buy_lots: [],
-      merged_sell_lots: [],
-      merged_total_qty: 0,
-      merged_total_sell_qty: 0,
-      remaining_qty: 0,
-      sold_out: false,
-      sell_status: '',
-    },
-    status: 'draft',
-    createdAt: now,
-    updatedAt: now,
-  };
-  buyRecord.data.position_record_id = newPosition.id;
-  await saveRecord(buyRecord);
-  await saveRecord(newPosition);
-  return newPosition;
+  // 查同代码仓位单（可能此前已通过其他买入单创建）→ 复用；否则创建骨架
+  const position = findPositionByCode(allRecords, code) || createPositionSkeleton(code, buyRecord);
+  return linkBuyToPosition(buyRecord, position);
 }

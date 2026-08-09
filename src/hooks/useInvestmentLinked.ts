@@ -106,43 +106,51 @@ export function useInvestmentLinked({
         const code = String(record.data.buy_company_name ?? '').trim();
         if (!code) return;
 
-        let position: FormRecord | undefined;
+        // 读取已关联仓位单（无则买入单完成后创建）
         const linkedId = record.data.position_record_id as string | undefined;
-        if (linkedId) {
-          position = await getRecord(linkedId);
-        }
-        const allRecords = await getAllRecords('investment_checklist');
-
-        // 买入单完成 → 创建/关联仓位单（幂等）
+        let position = linkedId ? await getRecord(linkedId) : undefined;
         if (recordRole === 'buy' && !position) {
-          const buyingDone =
-              !isFieldEmpty(record.data.buy_company_name) &&
-              !isFieldEmpty(record.data.buy_thesis) &&
-              record.data.buy_understand_business === true;
-          if (buyingDone) {
-            position = await ensurePositionForBuyRecord(record, allRecords);
-            if (position) {
-              showToast(`买入记录已完成，已自动建立 ${code} 的持仓记录`, 'success');
-            }
-          }
+          position = await ensureBuyPositionForRecord(record, code);
         }
 
         // 刷新仓位单汇总（merged_buy_lots / merged_sell_lots / 剩余持仓 / 清仓状态）
         if (position) {
-          const refreshed = await getAllRecords('investment_checklist');
-          const { buyRecords, sellRecords } = getLinkedRecords(position, refreshed);
-          const updated = syncPositionFromLinked(position, buyRecords, sellRecords);
-          await saveRecord(updated);
-          if (recordRole === 'sell' && updated.data.sold_out === true) {
-            showToast(
-                `${code} 已全部卖出，${positionCooldownDays} 天后可进行投资周期复盘`,
-                'success'
-            );
-          }
+          await refreshPositionSummary(position, recordRole, code, positionCooldownDays);
         }
       },
       [templateId, recordRole, positionCooldownDays, showToast]
   );
+
+  /** 买入单完成（核心字段齐备）→ 创建/复用仓位单并提示（幂等） */
+  async function ensureBuyPositionForRecord(record: FormRecord, code: string): Promise<FormRecord | undefined> {
+    const buyingDone =
+        !isFieldEmpty(record.data.buy_company_name) &&
+        !isFieldEmpty(record.data.buy_thesis) &&
+        record.data.buy_understand_business === true;
+    if (!buyingDone) return undefined;
+    const allRecords = await getAllRecords('investment_checklist');
+    const position = await ensurePositionForBuyRecord(record, allRecords);
+    if (position) {
+      showToast(`买入记录已完成，已自动建立 ${code} 的持仓记录`, 'success');
+    }
+    return position;
+  }
+
+  /** 从关联买卖单重新汇总仓位单数据并保存；卖出全部清仓时提示投资周期复盘开放 */
+  async function refreshPositionSummary(
+      position: FormRecord,
+      recordRole: 'position' | 'buy' | 'sell',
+      code: string,
+      cooldownDays: number
+  ): Promise<void> {
+    const refreshed = await getAllRecords('investment_checklist');
+    const { buyRecords, sellRecords } = getLinkedRecords(position, refreshed);
+    const updated = syncPositionFromLinked(position, buyRecords, sellRecords);
+    await saveRecord(updated);
+    if (recordRole === 'sell' && updated.data.sold_out === true) {
+      showToast(`${code} 已全部卖出，${cooldownDays} 天后可进行投资周期复盘`, 'success');
+    }
+  }
 
   return { linkedPosition, linkSaveAfterSave };
 }

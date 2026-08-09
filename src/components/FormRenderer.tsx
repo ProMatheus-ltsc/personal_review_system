@@ -19,16 +19,18 @@ import { useSaveRecord } from '@/hooks/useDB';
 import { getLatestCompletedRecord, getSetting } from '@/services/db';
 import { useToast } from '@/hooks/useToast';
 import { useInvestmentLinked } from '@/hooks/useInvestmentLinked';
-import { validateRequiredFields, getCurrentPhaseIndex, getSectionPhaseIndex, isFieldEmpty, getPhaseTimeLockInfo } from '@/utils/formValidation';
+import { validateRequiredFields, getSectionPhaseIndex, isFieldEmpty, getPhaseTimeLockInfo } from '@/utils/formValidation';
 import type { ValidationError } from '@/utils/formValidation';
+import { usePhaseLogic } from '@/hooks/usePhaseLogic';
 import { levelMap } from '@/constants/templateMeta';
-import { ConditionalField, OptionalFieldsGroup, CollapsibleSection } from './form';
+import { ConditionalField, OptionalFieldsGroup, CollapsibleSection, FormNavButtons, FormTabs, PhaseNotice } from './form';
 import FieldRenderer from './FieldRenderer';
 import QualityCheck from './QualityCheck';
 import PhaseIndicator from './PhaseIndicator';
 import Toast from './Toast';
 import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
+import PositionReviewOverview from './PositionReviewOverview';
 import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
 import { buildRoleTemplate, COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
 import SellContextInline from './SellContextInline';
@@ -164,18 +166,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showQualityCheck, setShowQualityCheck] = useState(false);
-  const [initialTabSet, setInitialTabSet] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [loadedFromPrevWeek, setLoadedFromPrevWeek] = useState(false);
   /** 是否已经对只读阶段回看做过一次 Toast 提示（后续不再重复弹） */
   const [readonlyToastShown, setReadonlyToastShown] = useState(false);
-  /**
-   * 用户实际进入过的最高阶段索引。
-   * currentPhaseIndex 会在字段填满时自动推进（用于解锁下一阶段），
-   * 但只有用户真正进入下一阶段后，之前的阶段才锁定——
-   * 避免「买入前」刚填完必填项就被置灰锁定的自动完成错觉。
-   */
-  const [visitedMaxPhase, setVisitedMaxPhase] = useState(0);
   const { toast, showToast, hideToast } = useToast();
   const { save } = useSaveRecord();
   const currentRecordId = useRef(recordId || uuidv4());
@@ -335,95 +329,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // Phase detection - watch all completion fields for reactivity
   const phases = template.phases;
 
-  // For repeatable sections, we watch the entries key instead of individual fields
-  const repeatableEntriesKeys = useMemo(() => {
-    if (!phases) return [] as string[];
-    const keys: string[] = [];
-    phases.forEach((phase) => {
-      phase.sectionIndices.forEach((idx) => {
-        const section = template.sections[idx];
-        if (section?.repeatable) {
-          keys.push(`${section.id}_entries`);
-        }
-      });
-    });
-    return keys;
-  }, [phases, template.sections]);
-
-  const phaseCompletionFields = useMemo(
-      () => {
-        if (!phases) return [] as string[];
-        const fields: string[] = [];
-        phases.forEach((phase) => {
-          const isRepeatablePhase = phase.sectionIndices.some((idx) =>
-              template.sections[idx]?.repeatable
-          );
-          if (!isRepeatablePhase) {
-            phase.completionFields.forEach((f) => {
-              if (!fields.includes(f)) fields.push(f);
-            });
-          }
-        });
-        return fields;
-      },
-      [phases, template.sections]
-  );
-
-  const watchedPhaseValues = useWatch({
-    control,
-    name: phaseCompletionFields.length > 0 ? phaseCompletionFields : ['__phase_placeholder__'],
-    disabled: phaseCompletionFields.length === 0,
-  });
-
-  // Also watch repeatable entries for phase detection
-  const watchedRepeatableEntries = useWatch({
-    control,
-    name: repeatableEntriesKeys.length > 0 ? repeatableEntriesKeys : ['__repeatable_placeholder__'],
-    disabled: repeatableEntriesKeys.length === 0,
-  });
-
-  const currentPhaseIndex = useMemo(() => {
-    if (!phases) return 0;
-    const formData: Record<string, any> = {};
-    phaseCompletionFields.forEach((field, i) => {
-      formData[field] = watchedPhaseValues[i];
-    });
-    // Include repeatable entries data
-    repeatableEntriesKeys.forEach((key, i) => {
-      formData[key] = watchedRepeatableEntries[i];
-    });
-    const createdAt = initialData ? (initialData._createdAt as string) : undefined;
-    return getCurrentPhaseIndex(phases, formData, template.sections, createdAt);
-  }, [phases, phaseCompletionFields, watchedPhaseValues, repeatableEntriesKeys, watchedRepeatableEntries, template.sections, initialData]);
-
-  // Auto-navigate to current phase's first section on initial load (for existing records)
-  useEffect(() => {
-    if (!initialTabSet && phases && initialData) {
-      const firstSectionIdx = phases[currentPhaseIndex]?.sectionIndices[0];
-      if (firstSectionIdx !== undefined && firstSectionIdx > 0) {
-        setActiveTab(firstSectionIdx);
-      }
-      // 编辑已有记录时，直接以当前阶段作为已进入的最高阶段（之前的阶段锁定）
-      // 特殊处理：部分卖出后的记录（sell_status=partial），虽然 currentPhaseIndex 可能在卖出阶段，
-      // 但持有阶段应该保持可编辑（用户需要为剩余持仓添加持有检查），因此 visitedMaxPhase 不超过持有阶段
-      let effectiveMaxPhase = currentPhaseIndex;
-      if (initialData.sell_status === 'partial' && template.id === 'investment_checklist') {
-        const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
-        if (holdingPhaseIdx >= 0 && currentPhaseIndex > holdingPhaseIdx) {
-          effectiveMaxPhase = holdingPhaseIdx;
-        }
-      }
-      setVisitedMaxPhase(effectiveMaxPhase);
-      // 部分卖出/撤销后的记录，卖出日期被清空了，重新打开时默认填充今天日期
-      if (template.id === 'investment_checklist' && !initialData.sell_date) {
-        setValue('sell_date', new Date().toISOString().slice(0, 10), { shouldDirty: false });
-      }
-      setInitialTabSet(true);
-    } else if (!initialTabSet) {
-      setInitialTabSet(true);
-    }
-  }, [initialTabSet, phases, initialData, currentPhaseIndex, template.id, setValue]);
-
   /** 构建 FormRecord：从当前表单值组装记录（保留初始 createdAt，更新 updatedAt） */
   const buildRecord = useCallback(
       (status: 'draft' | 'completed'): FormRecord => {
@@ -442,38 +347,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       [getValues, template, initialData]
   );
 
-  // Check if all phases before the completesRecord phase are filled
-  // (used to determine if "mark as completed" button should be shown)
-  const canMarkComplete = useCallback((): boolean => {
-    if (!phases) return false;
-    const formData = getValues();
-    // Find the phase with completesRecord
-    const completesPhaseIndex = phases.findIndex(p => p.completesRecord);
-    if (completesPhaseIndex < 0) return false;
-    // All phases up to and including the completesRecord phase must have completionFields satisfied
-    for (let i = 0; i <= completesPhaseIndex; i++) {
-      const phase = phases[i];
-      const repeatableSection = template.sections.find((s, idx) =>
-          s.repeatable && phase.sectionIndices.includes(idx)
-      );
-      if (repeatableSection) {
-        const entriesKey = `${repeatableSection.id}_entries`;
-        const entries = formData[entriesKey] as Record<string, unknown>[] | undefined;
-        if (!entries || entries.length === 0) return false;
-        const hasCompleteEntry = entries.some((entry) =>
-            phase.completionFields.every((fieldId) => !isFieldEmpty(entry[fieldId]))
-        );
-        if (!hasCompleteEntry) return false;
-      } else {
-        const allComplete = phase.completionFields.every(
-            (fieldId) => !isFieldEmpty(formData[fieldId])
-        );
-        if (!allComplete) return false;
-      }
-    }
-    return true;
-  }, [phases, getValues, template.sections]);
-
   // Track record status from initial data
   const [recordStatus, setRecordStatus] = useState<'draft' | 'completed'>(
       initialData?._status as 'draft' | 'completed' || 'draft'
@@ -491,11 +364,28 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     showToast,
   });
 
+  /** 投资清单保存前：同步卖出复盘 → merged_reviews（卖出单=顶层字段自动关联；仓位单/旧模型=entries 条目）
+   *  + position_review_* → merged_position_review（仅仓位单/旧模型） */
+  const syncInvestmentReviewLayers = () => {
+    if (template.id !== 'investment_checklist') return;
+    const currentFormData = getValues();
+    let synced = syncReviewsFromEntries(currentFormData);
+    if (!recordRole || recordRole === 'position') {
+      synced = syncPositionReview(synced);
+      if (synced.merged_position_review !== undefined) {
+        setValue('merged_position_review', synced.merged_position_review, { shouldDirty: false });
+      }
+    }
+    if (Array.isArray(synced.merged_reviews)) {
+      setValue('merged_reviews', synced.merged_reviews, { shouldDirty: false });
+    }
+  };
+
   const performSave = useCallback(
       async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {
         try {
           setSaveStatus('saving');
-          // 首次标记完成时写入完成日期，作为复盘阶段 30 天解锁的基准
+          // 首次标记完成时写入完成日期，作为复盘阶段解锁的基准
           if (status === 'completed' && isFieldEmpty(getValues('_completedAt'))) {
             setValue('_completedAt', new Date().toISOString().slice(0, 10), { shouldDirty: false });
           }
@@ -503,22 +393,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           const finalStatus: 'draft' | 'completed' =
               status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
 
-          // 投资检查清单：保存前同步卖出复盘 → merged_reviews（Trade Review 层）
-          // （卖出单=顶层 sell_review_* 字段自动关联；仓位单/旧模型=sell_review_entries 条目）
-          // + position_review_* → merged_position_review（Position Review 层，仅仓位单/旧模型）
-          if (template.id === 'investment_checklist') {
-            const currentFormData = getValues();
-            let synced = syncReviewsFromEntries(currentFormData);
-            if (!recordRole || recordRole === 'position') {
-              synced = syncPositionReview(synced);
-              if (synced.merged_position_review !== undefined) {
-                setValue('merged_position_review', synced.merged_position_review, { shouldDirty: false });
-              }
-            }
-            if (Array.isArray(synced.merged_reviews)) {
-              setValue('merged_reviews', synced.merged_reviews, { shouldDirty: false });
-            }
-          }
+          // 投资检查清单：保存前同步 Trade Review / Position Review 结构化层
+          syncInvestmentReviewLayers();
 
           const record = buildRecord(finalStatus);
           await save(record);
@@ -555,35 +431,31 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     };
   }, [performSave, recordStatus, phases]);
 
-  // Check if a section belongs to a locked (future) phase
-  const isSectionLocked = useCallback(
-      (sectionIndex: number): boolean => {
-        if (!phases) return false;
-        const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
-        return sectionPhaseIdx > currentPhaseIndex;
-      },
-      [phases, currentPhaseIndex]
-  );
-
-  // 判断 section 是否为只读：
-  // - 无阶段模板：已完成记录整体只读
-  // - 多阶段模板：
-  //   1) 用户已实际进入过的更高阶段 → 之前的阶段锁定（只能查看不能修改）
-  //   2) 记录标记完成后，completesRecord 阶段（决策后/卖出）及之前的阶段
-  //      全部锁定，不能再修改（复盘阶段解锁后仍可填写）
-  const isSectionReadOnly = useCallback(
-      (sectionIndex: number): boolean => {
-        if (!phases) return recordStatus === 'completed';
-        const sectionPhaseIdx = getSectionPhaseIndex(phases, sectionIndex);
-        if (sectionPhaseIdx < visitedMaxPhase) return true;
-        if (recordStatus === 'completed') {
-          const completesIdx = phases.findIndex((p) => p.completesRecord);
-          if (completesIdx >= 0 && sectionPhaseIdx <= completesIdx) return true;
-        }
-        return false;
-      },
-      [phases, recordStatus, visitedMaxPhase]
-  );
+  // 多阶段模板：阶段计算 / 锁定判断 / 完成判定 / 阶段点击导航（拆分自本组件，见 usePhaseLogic）
+  const {
+    currentPhaseIndex,
+    visitedMaxPhase,
+    setVisitedMaxPhase,
+    isSectionLocked,
+    isSectionReadOnly,
+    canMarkComplete,
+    handlePhaseClick,
+    getLockedTabHint,
+  } = usePhaseLogic({
+    phases,
+    templateId: template.id,
+    templateSections: template.sections,
+    control,
+    getValues,
+    setValue,
+    initialData,
+    recordStatus,
+    showToast,
+    onNavigateSave: () => {
+      performSave('draft');
+    },
+    setActiveTab,
+  });
 
   // Save on tab switch
   const handleTabChange = useCallback(
@@ -591,15 +463,11 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         // Prevent navigating to a locked section
         if (isSectionLocked(index)) {
           // 投资清单：锁定复盘 tab 点击时提示剩余解锁天数（锁页面体验）
-          if (template.id === 'investment_checklist' && phases) {
-            const sectionPhaseIdx = getSectionPhaseIndex(phases, index);
-            const phase = phases[sectionPhaseIdx];
-            if (phase?.unlockAfterDays) {
-              const lockInfo = getPhaseTimeLockInfo(phase, getValues(), initialData ? (initialData._createdAt as string) : undefined);
-              if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
-                showToast(`「${template.sections[index].title}」还需等待 ${lockInfo.daysRemaining} 天冷静期，之后即可复盘`, 'info');
-                return;
-              }
+          if (template.id === 'investment_checklist') {
+            const hint = getLockedTabHint(index);
+            if (hint) {
+              showToast(hint, 'info');
+              return;
             }
           }
           return;
@@ -621,25 +489,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   );
 
   // Handle phase click - navigate to the first section of the selected phase
-  const handlePhaseClick = useCallback(
-      (phaseIndex: number) => {
-        if (!phases) return;
-        // Don't navigate to locked phases
-        if (phaseIndex > currentPhaseIndex) return;
-        const firstSectionIdx = phases[phaseIndex]?.sectionIndices[0];
-        if (firstSectionIdx === undefined) return;
-        // 回看已完成的只读阶段：直接进入，首次 Toast 提示
-        if (isSectionReadOnly(firstSectionIdx) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
-          setReadonlyToastShown(true);
-          showToast('该阶段已完成，仅供查看、无法修改', 'info');
-        }
-        // 进入更高阶段后，之前的阶段才锁定
-        if (phaseIndex > visitedMaxPhase) setVisitedMaxPhase(phaseIndex);
-        performSave('draft');
-        setActiveTab(firstSectionIdx);
-      },
-      [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
-  );
+  // （实现见 usePhaseLogic.handlePhaseClick）
 
   /** 手动保存草稿：调用 performSave 并提示（底部「保存草稿」按钮） */
   const handleDraftSave = async () => {
@@ -739,8 +589,39 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const mainFields = activeSection.fields.filter(
       (f) => f.priority !== 'optional'
   );
-  const optionalFields = activeSection.fields.filter(
-      (f) => f.priority === 'optional'
+
+  // 「更多选项(N)」计数要与实际渲染一致：optional 字段若带 condition 且当前不满足
+  // （如 buy_strategy_other 依赖 buy_strategy_tag 选「其他」），会被 ConditionalField 隐藏，
+  // 因此计数时需排除这些条件不满足的字段。这里响应式监听所有 optional 字段的 condition 依赖值。
+  const optionalConditionDeps = useMemo(() => {
+    const deps: string[] = [];
+    activeSection.fields.forEach((f) => {
+      if (f.priority === 'optional' && f.condition?.dependsOn && !deps.includes(f.condition.dependsOn)) {
+        deps.push(f.condition.dependsOn);
+      }
+    });
+    return deps;
+  }, [activeSection]);
+
+  const watchedOptionalDeps = useWatch({
+    control,
+    name: optionalConditionDeps.length > 0 ? optionalConditionDeps : ['__optional_placeholder__'],
+    disabled: optionalConditionDeps.length === 0,
+  });
+
+  const optionalFields = useMemo(
+      () =>
+          activeSection.fields.filter((f) => {
+            if (f.priority !== 'optional') return false;
+            if (!f.condition) return true;
+            // useWatch 数组 name 返回按 name 顺序的值数组 → 按 dependsOn 索引取值
+            const idx = optionalConditionDeps.indexOf(f.condition.dependsOn);
+            const depValue = idx >= 0 ? (watchedOptionalDeps as unknown[])[idx] : undefined;
+            const showWhen = f.condition.showWhen;
+            if (Array.isArray(showWhen)) return showWhen.includes(depValue as string);
+            return depValue === showWhen;
+          }),
+      [activeSection, watchedOptionalDeps, optionalConditionDeps]
   );
 
   // Clear validation errors when user modifies a field
@@ -775,82 +656,87 @@ const FormRenderer: React.FC<FormRendererProps> = ({
    * 渲染单个字段：合并 RHF 校验错误与自定义验证错误，处理条件字段/计算字段/
    * 动态选项/条件提示，返回带 key 的受控或非受控表单控件
    */
-  const renderFieldItem = (field: FormField) => {
-    // 买入单/卖出单：股票代码已在新建入口确定 → 自动填充并只读展示（避免误改导致仓位关联错乱）
-    if (
-        template.id === 'investment_checklist' &&
-        (recordRole === 'buy' || recordRole === 'sell') &&
-        field.id === 'buy_company_name'
-    ) {
-      return (
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-1 text-gray-700">
-              投资标的（股票代码）<span className="text-red-500 ml-1">*</span>
-            </label>
-            <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900 font-medium">
-              {getValues('buy_company_name') || '-'}
-            </div>
-            <p className="text-xs mt-1 text-gray-400">
-              💡 股票代码已在新建入口选择，如需变更请返回新建入口重新创建
-            </p>
-          </div>
-      );
-    }
-    // Check for validation errors from our custom validation
+  /** 投资清单买入/卖出单：股票代码只读展示（代码已在新建入口确定，避免误改导致仓位关联错乱） */
+  const renderReadonlyCodeField = () => (
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          投资标的（股票代码）<span className="text-red-500 ml-1">*</span>
+        </label>
+        <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900 font-medium">
+          {getValues('buy_company_name') || '-'}
+        </div>
+        <p className="text-xs mt-1 text-gray-400">
+          💡 股票代码已在新建入口选择，如需变更请返回新建入口重新创建
+        </p>
+      </div>
+  );
+
+  /** 合并 RHF 校验错误与自定义验证错误，返回首个错误文案 */
+  const computeFieldError = (field: FormField): string | undefined => {
     const validationError = validationErrors.find((err) => err.fieldId === field.id);
     const fieldError = errors[field.id];
-    const errorMessage = validationError
+    return validationError
         ? (validationError.message || '此字段为必填项')
         : fieldError
             ? typeof fieldError.message === 'string'
                 ? fieldError.message
                 : '此字段为必填项'
             : undefined;
+  };
 
-    // Compute watchedHintValue for fields with hintDependsOn
-    const watchedHintValue = field.hintDependsOn ? watch(field.hintDependsOn) as string | undefined : undefined;
+  /** 计算 optionsFrom 动态选项（从表格列取值去重） */
+  const computeDynamicOptions = (field: FormField): { value: string; label: string }[] | undefined => {
+    if (!field.optionsFrom) return undefined;
+    const tableData = watch(field.optionsFrom.fieldId) as Record<string, string>[] | undefined;
+    if (!Array.isArray(tableData)) return undefined;
+    return tableData
+        .map((row) => row[field.optionsFrom!.columnId])
+        .filter((v): v is string => !!v && v.trim() !== '')
+        .map((v) => ({ value: v, label: v }));
+  };
 
-    // Get computed value for computed fields
-    const computedValue = field.computed ? (watch(field.id) as string | undefined) : undefined;
-
-    // Compute dynamic options for fields with optionsFrom (linked to a table column)
-    let dynamicOptions: { value: string; label: string }[] | undefined;
-    if (field.optionsFrom) {
-      const tableData = watch(field.optionsFrom.fieldId) as Record<string, string>[] | undefined;
-      if (Array.isArray(tableData)) {
-        dynamicOptions = tableData
-            .map((row) => row[field.optionsFrom!.columnId])
-            .filter((v): v is string => !!v && v.trim() !== '')
-            .map((v) => ({ value: v, label: v }));
-      }
+  /**
+   * 渲染单个字段：合并 RHF 校验错误与自定义验证错误，处理条件字段/计算字段/
+   * 动态选项/条件提示，返回带 key 的受控或非受控表单控件
+   */
+  const renderFieldItem = (field: FormField) => {
+    // 买入单/卖出单：股票代码只读展示
+    if (
+        template.id === 'investment_checklist' &&
+        (recordRole === 'buy' || recordRole === 'sell') &&
+        field.id === 'buy_company_name'
+    ) {
+      return renderReadonlyCodeField();
     }
 
-    const fieldComponent =
-        field.type === 'checkbox' || field.type === 'rating' || field.type === 'table' ? (
-            <FieldRenderer
-                key={field.id}
-                field={field}
-                register={register}
-                error={errorMessage}
-                value={watch(field.id)}
-                onChange={(val) => setValue(field.id, val, { shouldDirty: true })}
-                templateId={template.id}
-                watchedHintValue={watchedHintValue}
-                computedValue={computedValue}
-                dynamicOptions={dynamicOptions}
-            />
-        ) : (
-            <FieldRenderer
-                key={field.id}
-                field={field}
-                register={register}
-                error={errorMessage}
-                templateId={template.id}
-                watchedHintValue={watchedHintValue}
-                computedValue={computedValue}
-                dynamicOptions={dynamicOptions}
-            />
-        );
+    const errorMessage = computeFieldError(field);
+    // hintDependsOn：切换币种时联动提示
+    const watchedHintValue = field.hintDependsOn ? watch(field.hintDependsOn) as string | undefined : undefined;
+    // 计算字段：读当前已计算值
+    const computedValue = field.computed ? (watch(field.id) as string | undefined) : undefined;
+    // optionsFrom：表格列动态选项
+    const dynamicOptions = computeDynamicOptions(field);
+
+    // checkbox/rating/table 需要受控传值，其余字段由 RHF register 接管
+    const isControlledType = field.type === 'checkbox' || field.type === 'rating' || field.type === 'table';
+    const fieldComponent = (
+        <FieldRenderer
+            key={field.id}
+            field={field}
+            register={register}
+            error={errorMessage}
+            templateId={template.id}
+            watchedHintValue={watchedHintValue}
+            computedValue={computedValue}
+            dynamicOptions={dynamicOptions}
+            {...(isControlledType
+                ? {
+                    value: watch(field.id),
+                    onChange: (val: unknown) => setValue(field.id, val, { shouldDirty: true }),
+                  }
+                : {})}
+        />
+    );
 
     return (
         <ConditionalField key={field.id} field={field} control={control}>
@@ -950,130 +836,34 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             />
         )}
 
-        {/* Tab navigation */}
-        <div className="mb-6 border-b border-gray-200">
-          <nav
-              className="flex overflow-x-auto -mb-px scrollbar-hide"
-              role="tablist"
-              aria-label="表单部分"
-          >
-            {template.sections.map((section, index) => {
-              // 投资清单：投资周期复盘 tab 仅在清仓后显示
-              if (template.id === 'investment_checklist' && section.id === 'position_review' && !soldOutWatch) {
-                return null;
-              }
-              const hasErrors = sectionsWithErrors.has(index);
-              const locked = isSectionLocked(index);
-              const readOnly = isSectionReadOnly(index);
-              return (
-                  <button
-                      key={section.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={index === activeTab}
-                      tabIndex={index === activeTab ? 0 : -1}
-                      disabled={locked}
-                      onClick={() => handleTabChange(index)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'ArrowRight' && index < template.sections.length - 1) {
-                          handleTabChange(index + 1);
-                        } else if (e.key === 'ArrowLeft' && index > 0) {
-                          handleTabChange(index - 1);
-                        }
-                      }}
-                      className={`whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition ${hasErrors ? 'relative' : ''} ${
-                          locked
-                              ? 'border-transparent text-gray-300 cursor-not-allowed'
-                              : index === activeTab
-                              ? 'border-indigo-500 text-indigo-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                  >
-                    {locked && <span className="mr-1">🔒</span>}
-                    {readOnly && !locked && <span className="mr-1 opacity-70">✓</span>}
-                    {section.title}
-                    {hasErrors && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />}
-                  </button>
-              );
-            })}
-          </nav>
-        </div>
+        {/* Tab navigation（独立组件，含隐藏/锁定/错误角标/键盘切换） */}
+        <FormTabs
+            sections={template.sections}
+            activeTab={activeTab}
+            shouldHide={(index) =>
+                template.id === 'investment_checklist' &&
+                template.sections[index].id === 'position_review' &&
+                !soldOutWatch
+            }
+            isLocked={isSectionLocked}
+            isReadOnly={isSectionReadOnly}
+            hasErrors={(index) => sectionsWithErrors.has(index)}
+            onTabChange={handleTabChange}
+        />
 
         {/* Active section fields */}
         <form onSubmit={(e) => e.preventDefault()}>
-          {/* Future phase banner */}
-          {phases && getSectionPhaseIndex(phases, activeTab) > currentPhaseIndex && (() => {
-            const sectionPhaseIdx = getSectionPhaseIndex(phases, activeTab);
-            const sectionPhase = phases[sectionPhaseIdx];
-            const timeLockInfo = sectionPhase ? getPhaseTimeLockInfo(
-                sectionPhase,
-                getValues(),
-                initialData ? (initialData._createdAt as string) : undefined
-            ) : null;
-
-            if (timeLockInfo) {
-              const unlockDateStr = timeLockInfo.unlockDate.getFullYear() < 9000
-                  ? timeLockInfo.unlockDate.toISOString().slice(0, 10)
-                  : '待确定';
-              const showMarkCompleteBtn = recordStatus === 'draft' && canMarkComplete();
-              return (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-4 rounded-lg mb-4">
-                    <div className="flex items-start gap-3">
-                      <span className="text-lg">🔒</span>
-                      <div>
-                        <p className="font-medium">该复盘暂未开放</p>
-                        <p className="mt-1">「{sectionPhase.label}」将在 <strong>{unlockDateStr}</strong> 开放（还需等待 {timeLockInfo.daysRemaining} 天）</p>
-                        <p className="mt-1 text-xs text-amber-600">让时间帮你获得更客观的视角，再来复盘效果更佳</p>
-                      </div>
-                    </div>
-                    {showMarkCompleteBtn && (
-                        <div className="mt-3 ml-8">
-                          <button
-                              type="button"
-                              onClick={handleMarkComplete}
-                              className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
-                          >
-                            ✅ 标记为已完成
-                          </button>
-                        </div>
-                    )}
-                  </div>
-              );
-            }
-            return (
-                <div className="text-sm text-gray-400 italic bg-gray-50 p-2 rounded mb-4 flex items-center gap-2">
-                  <span>📌</span>
-                  <span>此部分将在「{phases[sectionPhaseIdx]?.label}」阶段填写</span>
-                </div>
-            );
-          })()}
-
-          {/* Delay notice for phases with activateAfterDays */}
-          {phases && (() => {
-            const sectionPhaseIdx = getSectionPhaseIndex(phases, activeTab);
-            const sectionPhase = phases[sectionPhaseIdx];
-            if (!sectionPhase?.activateAfterDays || !sectionPhase?.activateAfterField) return null;
-            const fieldValue = getValues(sectionPhase.activateAfterField) as string;
-            if (!fieldValue || !fieldValue.trim()) return null;
-            const parsedDate = new Date(fieldValue);
-            if (isNaN(parsedDate.getTime())) return null;
-            const today = new Date();
-            const daysSince = Math.floor((today.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24));
-            const daysRemaining = sectionPhase.activateAfterDays - daysSince;
-            if (daysRemaining > 0) {
-              return (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg mb-4">
-                    ⏰ 建议等待 {sectionPhase.activateAfterDays} 天后再复盘（还需等待 {daysRemaining} 天），让时间帮你获得更客观的视角
-                  </div>
-              );
-            } else {
-              return (
-                  <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-lg mb-4">
-                    ✅ 已过 {sectionPhase.activateAfterDays} 天冷静期，现在可以复盘了！
-                  </div>
-              );
-            }
-          })()}
+          {/* 阶段状态提示：未来阶段锁页面 + 冷静期延迟提示（独立组件） */}
+          <PhaseNotice
+              phases={phases}
+              activeTab={activeTab}
+              currentPhaseIndex={currentPhaseIndex}
+              recordStatus={recordStatus}
+              canMarkComplete={canMarkComplete}
+              onMarkComplete={handleMarkComplete}
+              getValues={getValues}
+              recordCreatedAt={initialData ? (initialData._createdAt as string) : undefined}
+          />
 
           {/* Only render form fields if the section is NOT locked */}
           {!isSectionLocked(activeTab) && (
@@ -1141,40 +931,17 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           />
                       )}
 
-                      {/* 投资清单：投资周期复盘 — 整体投资概览 */}
-                      {template.id === 'investment_checklist' && activeSection.id === 'position_review' && (() => {
-                        const buyPrice = parseFloat(String(watch('buy_price') ?? ''));
-                        const sellPrice = parseFloat(String(watch('sell_exit_price') ?? ''));
-                        const totalQty = parseFloat(String(watch('merged_total_qty') ?? watch('buy_quantity') ?? ''));
-                        const pnlPercent = !isNaN(buyPrice) && !isNaN(sellPrice) && buyPrice > 0
-                          ? ((sellPrice - buyPrice) / buyPrice) * 100 : null;
-                        const buyDate = watch('buy_date') as string | undefined;
-                        const lastSellDate = watch('last_sell_date') as string | undefined;
-                        let holdDays: number | null = null;
-                        if (buyDate && lastSellDate) {
-                          const s = new Date(buyDate), e = new Date(lastSellDate);
-                          if (!isNaN(s.getTime()) && !isNaN(e.getTime())) holdDays = Math.round((e.getTime() - s.getTime()) / 86400000);
-                        }
-                        const trades = Array.isArray(mergedTradesWatch) ? mergedTradesWatch : [];
-                        const buyCount = trades.filter((t) => t.type === 'BUY').length;
-                        const sellCount = trades.filter((t) => t.type === 'SELL').length;
-                        const pnlColor = pnlPercent === null ? '' : pnlPercent > 0 ? 'text-red-600' : pnlPercent < 0 ? 'text-green-600' : 'text-gray-700';
-                        return (
-                          <div className="mb-4 bg-violet-50/60 border border-violet-200 rounded-lg p-3 text-xs text-gray-600">
-                            <p className="text-xs font-semibold text-violet-800 mb-2">📊 投资周期概览</p>
-                            <div className="flex flex-wrap gap-x-5 gap-y-1">
-                              <span>买入价 <b className="text-gray-900">{!isNaN(buyPrice) ? buyPrice.toFixed(2) : '-'}</b></span>
-                              <span>卖出价 <b className="text-gray-900">{!isNaN(sellPrice) ? sellPrice.toFixed(2) : '-'}</b></span>
-                              {pnlPercent !== null && (
-                                <span>总盈亏 <b className={pnlColor}>{pnlPercent > 0 ? '+' : ''}{pnlPercent.toFixed(2)}%</b></span>
-                              )}
-                              {holdDays !== null && <span>持有 <b className="text-gray-900">{holdDays} 天</b></span>}
-                              {totalQty > 0 && <span>总量 <b className="text-gray-900">{totalQty}</b></span>}
-                              <span>交易 <b className="text-gray-900">{buyCount}</b> 买 / <b className="text-gray-900">{sellCount}</b> 卖</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      {/* 投资清单：投资周期复盘 — 整体投资概览（独立组件，数据来自仓位单自身） */}
+                      {template.id === 'investment_checklist' && activeSection.id === 'position_review' && (
+                          <PositionReviewOverview
+                              buyPrice={parseFloat(String(watch('buy_price') ?? ''))}
+                              sellPrice={parseFloat(String(watch('sell_exit_price') ?? ''))}
+                              totalQty={parseFloat(String(watch('merged_total_qty') ?? watch('buy_quantity') ?? ''))}
+                              buyDate={watch('buy_date') as string | undefined}
+                              lastSellDate={watch('last_sell_date') as string | undefined}
+                              trades={mergedTradesWatch}
+                          />
+                      )}
 
                       {/* Required + Recommended fields */}
                       {mainFields.map((field) => renderFieldItem(field))}
@@ -1188,92 +955,23 @@ const FormRenderer: React.FC<FormRendererProps> = ({
               </fieldset>
           )}
 
-          {/* Navigation buttons */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between mt-6 pt-4 border-t border-gray-100 gap-3 sm:gap-0">
-            <button
-                type="button"
-                onClick={goPrev}
-                disabled={activeTab === 0}
-                className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg transition ${
-                    activeTab === 0
-                        ? 'text-gray-300 cursor-not-allowed'
-                        : 'text-gray-700 hover:bg-gray-100'
-                }`}
-            >
-              ← 上一步
-            </button>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button
-                  type="button"
-                  onClick={handleDraftSave}
-                  disabled={isSectionReadOnly(activeTab)}
-                  className={`w-full sm:w-auto px-4 py-2 text-sm font-medium bg-white border border-gray-300 rounded-lg transition ${
-                      isSectionReadOnly(activeTab)
-                          ? 'text-gray-300 cursor-not-allowed'
-                          : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-              >
-                保存草稿
-              </button>
-
-              {recordStatus === 'completed' && !phases ? (
-                  // 无阶段模板：记录已完成，整体只读
-                  <button
-                      type="button"
-                      disabled
-                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
-                  >
-                    ✅ 已完成
-                  </button>
-              ) : activeTab === template.sections.length - 1 ? (
-                  <button
-                      type="button"
-                      onClick={handleComplete}
-                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
-                  >
-                    完成
-                  </button>
-              ) : isSectionLocked(activeTab + 1) && recordStatus === 'completed' ? (
-                  // 记录已完成，下一阶段仍被时间锁定：显示完成状态
-                  <button
-                      type="button"
-                      disabled
-                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-green-600 bg-green-50 border border-green-200 rounded-lg cursor-default"
-                  >
-                    ✅ 已完成
-                  </button>
-              ) : isSectionLocked(activeTab + 1) && canMarkComplete() ? (
-                  // completesRecord 阶段（决策后/卖出/买入）已完成、下一阶段被时间锁定：
-                  // 在此即可标记记录完成，复盘阶段将在冷静期后解锁。
-                  // 投资清单的买入/卖出单显示「完成买入单/完成卖出单」语义，等待复盘解锁
-                  <button
-                      type="button"
-                      onClick={handleMarkComplete}
-                      className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition"
-                  >
-                    {template.id === 'investment_checklist' && recordRole === 'buy'
-                        ? '✅ 完成买入单 · 等待复盘'
-                        : template.id === 'investment_checklist' && recordRole === 'sell'
-                            ? '✅ 完成卖出单 · 等待复盘'
-                            : '✅ 完成'}
-                  </button>
-              ) : (
-                  <button
-                      type="button"
-                      onClick={goNext}
-                      disabled={isSectionLocked(activeTab + 1)}
-                      className={`w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg transition ${
-                          isSectionLocked(activeTab + 1)
-                              ? 'text-gray-300 bg-gray-100 cursor-not-allowed'
-                              : 'text-white bg-indigo-600 hover:bg-indigo-700'
-                      }`}
-                  >
-                    下一步 →
-                  </button>
-              )}
-            </div>
-          </div>
+          {/* Navigation buttons（独立组件，逻辑集中在 FormNavButtons） */}
+          <FormNavButtons
+              activeTab={activeTab}
+              totalSections={template.sections.length}
+              recordStatus={recordStatus}
+              recordRole={recordRole}
+              templateId={template.id}
+              hasPhases={!!phases}
+              canMarkComplete={canMarkComplete}
+              isSectionLocked={isSectionLocked}
+              isSectionReadOnly={isSectionReadOnly}
+              onPrev={goPrev}
+              onNext={goNext}
+              onSaveDraft={handleDraftSave}
+              onComplete={handleComplete}
+              onMarkComplete={handleMarkComplete}
+          />
         </form>
 
       </div>
