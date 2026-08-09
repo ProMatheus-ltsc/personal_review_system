@@ -556,7 +556,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                   if (buyingDone) {
                     position = await ensurePositionForBuyRecord(record, allRecords);
                     if (position) {
-                      showToast(`买入单已完成，仓位单已同步创建（${code}）`, 'success');
+                      showToast(`买入记录已完成，已自动建立 ${code} 的持仓记录`, 'success');
                     }
                   }
                 }
@@ -567,7 +567,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                   await save(updated);
                   if (recordRole === 'sell' && updated.data.sold_out === true) {
                     showToast(
-                        `仓位 ${code} 已清仓，${cooldownDays.position} 天后可进行投资周期复盘`,
+                        `${code} 已全部卖出，${cooldownDays.position} 天后可进行投资周期复盘`,
                         'success'
                     );
                   }
@@ -589,7 +589,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                     syncMergedData(res.data);
                     if (res.soldOut) {
                       showToast(
-                          `已全部卖出（${code}），加权卖出价 ${res.data.sell_exit_price ?? ''}，复盘将于最后卖出日期 30 天后解锁`,
+                          `已全部卖出（${code}），平均卖出价 ${res.data.sell_exit_price ?? ''}，复盘将在冷静期结束后开放`,
                           'success'
                       );
                     } else {
@@ -602,7 +602,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                         }
                       }
                       showToast(
-                          `已记录本次卖出（${code}），剩余持仓 ${res.remainingQty ?? 0}，可继续买入合并`,
+                          `已记录本次卖出（${code}），剩余持仓 ${res.remainingQty ?? 0}，可继续追加买入`,
                           'success'
                       );
                     }
@@ -613,7 +613,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                   if (res) {
                     syncMergedData(res.data);
                     showToast(
-                        `已自动合并 ${res.merged} 份同代码买入记录（${code}），加权买入价已更新`,
+                        `已自动汇总 ${res.merged} 笔同代码买入记录（${code}），平均买入价已更新`,
                         'success'
                     );
                   }
@@ -692,7 +692,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             if (phase?.unlockAfterDays) {
               const lockInfo = getPhaseTimeLockInfo(phase, getValues(), initialData ? (initialData._createdAt as string) : undefined, { skipCooldown });
               if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
-                showToast(`「${template.sections[index].title}」将在 ${lockInfo.daysRemaining} 天后解锁（冷静期）`, 'info');
+                showToast(`「${template.sections[index].title}」还需等待 ${lockInfo.daysRemaining} 天冷静期，之后即可复盘`, 'info');
                 return;
               }
             }
@@ -796,9 +796,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             { skipCooldown }
         );
         if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
-          msg = `已标记为完成，「${nextPhase.label}」将在 ${lockInfo.daysRemaining} 天后解锁`;
+          msg = `已标记为完成，「${nextPhase.label}」将在 ${lockInfo.daysRemaining} 天后开放`;
         } else if (skipCooldown && nextPhase) {
-          msg = `已标记为完成，「${nextPhase.label}」已解锁（测试模式跳过冷静期）`;
+          msg = `已标记为完成，「${nextPhase.label}」已可复盘（测试账号已跳过等待期）`;
         }
       }
       showToast(msg, 'success');
@@ -920,7 +920,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       const pos = await ensurePositionForBuyRecord(record, allRecords);
       if (pos) {
         setValue('position_record_id', pos.id, { shouldDirty: false });
-        showToast('买入单已完成，仓位单已同步创建', 'success');
+        showToast('买入记录已完成，已自动建立持仓记录', 'success');
       }
     }, 1500);
     return () => clearTimeout(timer);
@@ -1140,7 +1140,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                 mergedSnapshots={watch('merged_snapshots') as MergedSnapshot[] | undefined}
                 emptyText={
                   !recordRole && currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
-                      ? '📌 同代码且都在持有阶段的买入记录会自动合并进当前单据（加权买入价 + 逐笔明细）；部分卖出的剩余持仓仍可合并新买入，全部卖出后以最后卖出日期为准 30 天解锁复盘'
+                      ? '📌 同一代码的买入记录会自动汇总展示（平均买入价 + 逐笔明细）；部分卖出后剩余持仓可继续追加买入；全部卖出后按冷静期设置开放复盘'
                       : undefined
                 }
             />
@@ -1218,8 +1218,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                     <div className="flex items-start gap-3">
                       <span className="text-lg">🔒</span>
                       <div>
-                        <p className="font-medium">该阶段尚未解锁</p>
-                        <p className="mt-1">「{sectionPhase.label}」将在 <strong>{unlockDateStr}</strong> 后解锁（还需等待 {timeLockInfo.daysRemaining} 天）</p>
+                        <p className="font-medium">该复盘暂未开放</p>
+                        <p className="mt-1">「{sectionPhase.label}」将在 <strong>{unlockDateStr}</strong> 开放（还需等待 {timeLockInfo.daysRemaining} 天）</p>
                         <p className="mt-1 text-xs text-amber-600">让时间帮你获得更客观的视角，再来复盘效果更佳</p>
                       </div>
                     </div>
@@ -1260,13 +1260,13 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             if (daysRemaining > 0) {
               return (
                   <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg mb-4">
-                    ⏰ 建议在卖出 {sectionPhase.activateAfterDays} 天后再进行复盘（距离可复盘还有 {daysRemaining} 天），让时间帮你获得更客观的视角
+                    ⏰ 建议等待 {sectionPhase.activateAfterDays} 天后再复盘（还需等待 {daysRemaining} 天），让时间帮你获得更客观的视角
                   </div>
               );
             } else {
               return (
                   <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-lg mb-4">
-                    ✅ 已过 {sectionPhase.activateAfterDays} 天冷静期，现在是复盘的好时机！
+                    ✅ 已过 {sectionPhase.activateAfterDays} 天冷静期，现在可以复盘了！
                   </div>
               );
             }
@@ -1286,7 +1286,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                     >
                       {recordStatus === 'completed' && !phases
                           ? '✅ 此记录已完成，内容为只读，不能修改'
-                          : `🔒 「${activeSection.title}」阶段已完成并锁定，只能查看，无法修改`}
+                          : `🔒 「${activeSection.title}」已完成，内容仅供查看，无法修改`}
                     </div>
                 )}
 

@@ -55,7 +55,7 @@ export default function SellContextInline({
     <div className="mb-4 bg-amber-50/70 border border-amber-200 rounded-lg p-3 text-xs text-gray-600 space-y-1">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
         <span>
-          加权成本 <b className="text-gray-900">{fmt(buy)}</b>
+          平均成本 <b className="text-gray-900">{fmt(buy)}</b>
           <span className="text-[10px] text-gray-400 ml-0.5">{currency}</span>
         </span>
         {remaining !== undefined && (
@@ -86,20 +86,20 @@ export default function SellContextInline({
           {qty !== undefined && qty > 0 ? (
             remaining - qty > 0 ? (
               <span className="text-blue-600">
-                保存后剩余持仓：<b>{remaining - qty}</b> 股（部分卖出，仍可继续买入合并）
+                保存后剩余持仓：<b>{remaining - qty}</b> 股（部分卖出，仍可继续买入）
               </span>
             ) : remaining - qty === 0 ? (
               <span className="text-green-700">
-                保存后将<b>全部清仓</b>，30 天后解锁复盘
+                保存后将<b>全部卖出</b>，复盘将在冷静期后开放
               </span>
             ) : (
               <span className="text-red-600">
-                卖出数量（{qty}）超过剩余持仓（{remaining}），保存时将被拦截
+                卖出数量（{qty}）超过剩余持仓（{remaining}），请修改后再保存
               </span>
             )
           ) : (
             <span className="text-amber-600">
-              卖出数量留空 = 卖出全部剩余持仓（{remaining} 股），保存后将全部清仓
+              数量留空 = 卖出全部剩余持仓（{remaining} 股），保存后将全部卖出
             </span>
           )}
         </div>

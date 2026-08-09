@@ -32,9 +32,9 @@ const HOT_STOCKS = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', '00700', '6
 
 /** 冷静期场景配置项描述 */
 const COOLDOWN_ITEMS = [
-  { key: COOLDOWN_SETTINGS.BUY, label: '买入复盘冷静期', hint: '买入单完成后，多久可复盘买入决策' },
-  { key: COOLDOWN_SETTINGS.SELL, label: '卖出复盘冷静期', hint: '卖出单完成后，多久可复盘卖出决策' },
-  { key: COOLDOWN_SETTINGS.POSITION, label: '投资周期复盘冷静期', hint: '仓位清仓后，多久可复盘整个投资周期' },
+  { key: COOLDOWN_SETTINGS.BUY, label: '买入复盘等待期', hint: '买入后，等待多久才能复盘买入决策' },
+  { key: COOLDOWN_SETTINGS.SELL, label: '卖出复盘等待期', hint: '卖出后，等待多久才能复盘卖出决策' },
+  { key: COOLDOWN_SETTINGS.POSITION, label: '投资周期复盘等待期', hint: '全部卖出后，等待多久才能复盘整个投资过程' },
 ] as const;
 
 export default function InvestmentEntry() {
@@ -199,7 +199,7 @@ export default function InvestmentEntry() {
             <span>✅</span> 投资检查清单
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            以股票代码为中心 — 一个代码一份仓位，买卖各自独立复盘
+            输入股票代码，管理持仓、买入与卖出复盘
           </p>
         </div>
 
@@ -263,7 +263,7 @@ export default function InvestmentEntry() {
             <div className="bg-indigo-50/60 border border-indigo-200 rounded-lg p-5 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-base font-semibold text-indigo-800">
-                  📌 {normalizeCode(code)} 仓位单
+                  📌 {normalizeCode(code)} 持仓
                 </h3>
                 <span
                     className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
@@ -310,7 +310,7 @@ export default function InvestmentEntry() {
                 </button>
               </div>
               <p className="mt-3 text-[11px] text-indigo-400">
-                买卖操作各新建独立复盘单（冷静期后可复盘），仓位单自动汇总所有买卖明细。
+                每次买入/卖出都会生成独立的复盘记录，等待期结束后即可复盘；同一代码的买卖明细会自动汇总展示在持仓记录中。
               </p>
             </div>
         )}
@@ -319,18 +319,18 @@ export default function InvestmentEntry() {
         {checked && !position && (
             <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4">
               <h3 className="text-base font-semibold text-gray-800 mb-2">
-                🆕 {normalizeCode(code)} 还没有仓位单
+                🆕 {normalizeCode(code)} 还没有持仓记录
               </h3>
               <p className="text-sm text-gray-500 mb-4">
-                该股票代码暂无仓位，请先创建买入单。买入单完成后将自动同步创建仓位单，
-                之后即可进行持有中复盘与后续买卖操作。
+                该股票代码暂无持仓，请先创建买入记录。买入记录填写完成后，系统会自动建立对应的持仓记录，
+                之后即可记录持有检查、继续买入或卖出。
               </p>
               <button
                   onClick={() => handleCreate('buy')}
                   disabled={creating !== null}
                   className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
               >
-                {creating === 'buy' ? '创建中...' : '🛒 创建买入单（完成后自动创建仓位单）'}
+                {creating === 'buy' ? '创建中...' : '🛒 创建买入记录（完成后自动建立持仓记录）'}
               </button>
             </div>
         )}
@@ -338,10 +338,10 @@ export default function InvestmentEntry() {
         {/* 复盘冷静期设置（按场景可配置） */}
         <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4">
           <h3 className="text-sm font-semibold text-gray-800 mb-1">
-            ⏱ 复盘冷静期设置
+            ⏱ 复盘等待期设置
           </h3>
           <p className="text-xs text-gray-400 mb-3">
-            各场景复盘解锁天数，可分别配置（0 = 立即解锁；修改后对新记录生效）
+            每次复盘前需要等待的天数，可按场景分别设置（0 表示无需等待；修改后对新记录生效）
           </p>
           <div className="space-y-3">
             {COOLDOWN_ITEMS.map((item) => (
@@ -378,10 +378,10 @@ export default function InvestmentEntry() {
         {/* 操作说明 */}
         <div className="bg-gray-50 border border-gray-100 rounded-lg p-4 text-xs text-gray-500 space-y-1.5">
           <p>📋 使用说明：</p>
-          <p>• 买入/卖出各生成独立复盘单，填写决策后按冷静期设置解锁对应复盘</p>
-          <p>• 买入单完成后自动创建仓位单；仓位单按股票代码汇总所有买卖明细（表格形式）</p>
-          <p>• 仓位单支持持有中复盘（表格形式）；清仓后按冷静期设置解锁投资周期复盘</p>
-          <p>• 有持仓的仓位单可随时发起卖出</p>
+          <p>• 买入和卖出各自独立复盘：完成记录后，等待设置的冷静期即可复盘</p>
+          <p>• 买入记录完成后自动建立持仓记录；同一代码的所有买卖明细会自动汇总展示</p>
+          <p>• 持仓期间可随时记录持有检查；全部卖出后，等待冷静期即可做整体复盘</p>
+          <p>• 有持仓时可随时发起卖出</p>
         </div>
       </div>
   );

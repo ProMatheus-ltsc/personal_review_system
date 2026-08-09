@@ -140,7 +140,7 @@ export default function InvestmentMergePanel({
       {/* 标题 */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-indigo-800">
-          🔗 合并持仓 · <span className="font-bold">{stockCode}</span>
+          📊 持仓明细 · <span className="font-bold">{stockCode}</span>
           {hasBuy && (
             <span className="ml-2 text-[10px] font-normal text-gray-500">
               {(mergedBuyLots as MergeLot[]).length} 笔买入
@@ -168,7 +168,7 @@ export default function InvestmentMergePanel({
       {hasBuy && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
-            <Row label="加权买入价" value={fmt(weightedBuy)} strong />
+            <Row label="平均买入价" value={fmt(weightedBuy)} strong />
             <Row label="总买入数量" value={fmt(totalBuyQty, 0)} />
             {remaining !== undefined && (
               <Row label="剩余持仓" value={remaining > 0 ? remaining : 0} />
@@ -211,7 +211,7 @@ export default function InvestmentMergePanel({
       {hasSnapshots && (
         <div className="mb-3">
           <div className="mb-2 text-xs text-gray-500">
-            📋 已合并 {(mergedSnapshots as MergedSnapshot[]).length} 份历史买入单据的完整填写细节
+            📋 以下 {(mergedSnapshots as MergedSnapshot[]).length} 笔买入记录的完整填写内容（历史记录自动保留）
           </div>
           <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
             <table className="w-full text-xs min-w-[720px]">
@@ -254,7 +254,7 @@ export default function InvestmentMergePanel({
       {hasSell && (
         <div>
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
-            <Row label="加权卖出价" value={fmt(weightedSellValue)} strong />
+            <Row label="平均卖出价" value={fmt(weightedSellValue)} strong />
             <Row label="总卖出数量" value={fmt(totalSellQty, 0)} />
             {remaining !== undefined && <Row label="剩余持仓" value={remaining > 0 ? remaining : 0} />}
           </div>
@@ -282,14 +282,13 @@ export default function InvestmentMergePanel({
           </div>
           {isSoldOut ? (
             <p className="mt-2 text-xs text-green-700">
-              ✅ 已全部卖出，本单据即唯一复盘单据；复盘将于{' '}
-              <b>{lastSellDate || '最后卖出日期'}</b> +30 天后解锁
+              ✅ 已全部卖出，复盘将于 <b>{lastSellDate || '最后卖出日期'}</b> 起 30 天后开放
             </p>
           ) : (
             remaining !== undefined &&
             remaining > 0 && (
               <p className="mt-2 text-xs text-blue-600">
-                本次为部分卖出，剩余 {remaining} 股仍在持仓，可继续合并同代码新买入；全部卖出后以最后卖出日期为准 30 天解锁复盘
+                本次为部分卖出，剩余 {remaining} 股仍持有，可继续追加买入；全部卖出后按冷静期设置开放复盘
               </p>
             )
           )}

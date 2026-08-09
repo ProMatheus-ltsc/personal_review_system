@@ -91,7 +91,7 @@ export const investmentChecklistTemplate: FormTemplate = {
             { value: 'USD', label: '美元(USD)' }, { value: 'CNY', label: '人民币(CNY)' },
           ], hint: '选择该笔交易使用的货币，后续价格字段将据此标注' },
         { id: 'buy_price', label: '买入价格', type: 'text', priority: 'required', placeholder: '输入买入价格', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：180.50 美元', 'CNY': '例：25.80 人民币' }, validation: NON_NEGATIVE_NUM_VALIDATION },
-        { id: 'buy_quantity', label: '买入数量/金额', type: 'text', priority: 'required', placeholder: '例：100股', hint: '分批买入/卖出的剩余持仓计算依赖此字段，请填写具体数量（如 100股），不要填金额', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：100股', 'CNY': '例：100股' }, validation: NON_NEGATIVE_NUM_VALIDATION },
+        { id: 'buy_quantity', label: '买入数量/金额', type: 'text', priority: 'required', placeholder: '例：100股', hint: '剩余持仓的计算会用到这个数量，请填写具体股数（如 100），不要填金额', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：100股', 'CNY': '例：100股' }, validation: NON_NEGATIVE_NUM_VALIDATION },
         { id: 'buy_thesis', label: '核心买入逻辑', type: 'textarea', priority: 'required', hint: '写下买入的1-3个核心理由，卖出时回头看', placeholder: '为什么买？这是将来复盘最重要的参考' },
         { id: 'buy_stop_loss_price', label: '止损价格', type: 'text', priority: 'required', hint: '在什么价格你愿意承认错误并退出？', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '输入美元止损价', 'CNY': '输入人民币止损价' }, validation: NON_NEGATIVE_NUM_VALIDATION },
         { id: 'buy_target_price_num', label: '目标价格', type: 'text', priority: 'required', hint: '基于你的估值逻辑', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '输入美元目标价', 'CNY': '输入人民币目标价' }, validation: NON_NEGATIVE_NUM_VALIDATION },
@@ -171,7 +171,7 @@ export const investmentChecklistTemplate: FormTemplate = {
         { id: 'sell_date', label: '卖出日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
         { id: 'sell_exit_price', label: '卖出价格', type: 'text', priority: 'required', placeholder: '输入卖出价格', hintDependsOn: 'buy_currency', conditionalPlaceholders: { 'USD': '例：220.00 美元', 'CNY': '例：30.50 人民币' }, validation: NON_NEGATIVE_NUM_VALIDATION },
         { id: 'sell_quantity', label: '卖出数量/份额', type: 'text', priority: 'recommended', placeholder: '例：60股',
-          hint: '部分卖出时填写本笔卖出数量，系统自动按同代码汇总计算剩余持仓与加权卖出价', validation: NON_NEGATIVE_NUM_VALIDATION },
+          hint: '部分卖出时填写本笔卖出数量，系统会自动汇总剩余持仓并计算平均卖出价', validation: NON_NEGATIVE_NUM_VALIDATION },
         { id: 'sell_reason', label: '卖出原因', type: 'radio', priority: 'required', options: [
             { value: '到达目标价', label: '到达目标价' }, { value: '触发止损', label: '触发止损' }, { value: '买入逻辑改变', label: '买入逻辑改变' },
             { value: '基本面恶化', label: '基本面恶化' }, { value: '找到更好机会', label: '找到更好机会' }, { value: '情绪驱动（恐慌/贪婪）', label: '情绪驱动（恐慌/贪婪）' },
@@ -219,7 +219,7 @@ export const investmentChecklistTemplate: FormTemplate = {
         // 关联的卖出交易（选项由 FormRenderer 从 SELL trades 动态注入）
         { id: 'sell_review_trade_id', label: '关联卖出交易', type: 'select', priority: 'required',
           placeholder: '选择要复盘的卖出交易',
-          hint: '每笔卖出可独立复盘，选择对应的卖出批次进行反思',
+          hint: '每笔卖出可独立复盘，选择对应的一笔卖出进行反思',
           options: [] },
         { id: 'sell_review_date', label: '复盘日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
         { id: 'sell_thesis_valid', label: '买入逻辑验证', type: 'radio', priority: 'required', options: [
@@ -397,7 +397,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole, cooldownDays = DEF
   return {
     ...investmentChecklistTemplate,
     name: '投资检查清单',
-    description: '以股票代码为准的投资周期看板 — 持有中复盘 + 清仓后完整复盘',
+    description: '持仓记录 — 持有中定期检查 + 全部卖出后的整体复盘',
     phases: [
       {
         id: 'holding',

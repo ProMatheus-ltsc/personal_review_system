@@ -233,7 +233,7 @@ export default function DashboardPage() {
           const qty = record.data.sell_quantity as string | number | undefined;
           pushItem(
               `sell_${record.id}`,
-              `${code} · 卖出${qty ? `${qty}股` : ''}${price ? `@${price}` : ''}复盘`,
+              `${code} · 卖出${qty ? ` ${qty} 股` : ''}${price ? ` @ ${price}` : ''}复盘`,
               `卖于 ${sellDate}`,
               sellDate
           );
@@ -255,7 +255,7 @@ export default function DashboardPage() {
               if (!trade.date) return;
               pushItem(
                   `${record.id}_${trade.id}`,
-                  `${code} · 卖出${trade.qty}股@${trade.price}`,
+                  `${code} · 卖出 ${trade.qty} 股 @ ${trade.price}`,
                   `卖出于 ${trade.date}`,
                   trade.date
               );
