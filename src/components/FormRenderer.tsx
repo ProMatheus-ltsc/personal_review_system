@@ -902,30 +902,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     return set;
   }, [validationErrors]);
 
-  // 买入单：买入阶段完成（代码/逻辑/检查齐备）且尚无仓位单 → 自动同步创建仓位单
-  // 兜底触发（performSave 中也有创建逻辑，这里覆盖「字段填齐但未手动保存/切 tab」的场景）
-  const buyDoneWatch = useWatch({
-    control,
-    name: ['buy_company_name', 'buy_thesis', 'buy_understand_business'],
-  });
-  useEffect(() => {
-    if (template.id !== 'investment_checklist' || recordRole !== 'buy') return;
-    const [name, thesis, understand] = buyDoneWatch as [unknown, unknown, unknown];
-    const done = !isFieldEmpty(name) && !isFieldEmpty(thesis) && understand === true;
-    if (!done) return;
-    if (getValues('position_record_id')) return; // 已关联仓位单
-    const timer = setTimeout(async () => {
-      const record = buildRecord('draft');
-      const allRecords = await getAllRecords('investment_checklist');
-      const pos = await ensurePositionForBuyRecord(record, allRecords);
-      if (pos) {
-        setValue('position_record_id', pos.id, { shouldDirty: false });
-        showToast('买入记录已完成，已自动建立持仓记录', 'success');
-      }
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [buyDoneWatch, recordRole, template.id, buildRecord, getValues, setValue, showToast]);
-
   /**
    * 渲染单个字段：合并 RHF 校验错误与自定义验证错误，处理条件字段/计算字段/
    * 动态选项/条件提示，返回带 key 的受控或非受控表单控件
