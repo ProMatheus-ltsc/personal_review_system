@@ -16,8 +16,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import type { FormTemplate, FormRecord, FormField } from '@/types';
 import { useSaveRecord } from '@/hooks/useDB';
-import { getLatestCompletedRecord, getAllRecords, getRecord, getSetting } from '@/services/db';
+import { getLatestCompletedRecord, getSetting } from '@/services/db';
 import { useToast } from '@/hooks/useToast';
+import { useInvestmentLinked } from '@/hooks/useInvestmentLinked';
 import { validateRequiredFields, getCurrentPhaseIndex, getSectionPhaseIndex, isFieldEmpty, getPhaseTimeLockInfo } from '@/utils/formValidation';
 import type { ValidationError } from '@/utils/formValidation';
 import { levelMap } from '@/constants/templateMeta';
@@ -36,10 +37,6 @@ import {
   ensureTradesInitialized,
   syncReviewsFromEntries,
   syncPositionReview,
-  syncPositionFromLinked,
-  getLinkedRecords,
-  ensurePositionForBuyRecord,
-  weightedAvgBuyDate,
   type InvestmentTrade,
 } from '@/services/investmentMerge';
 
@@ -192,7 +189,22 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         const initialized = ensureTradesInitialized(initialData);
         return { ...initialData, ...initialized };
       }
-      return initialData;
+      // 编辑已有记录：对「空白日期字段」补默认值（auto_today / auto_week_start / auto_week_end）。
+      // 保证已解锁的复盘日期（买入/卖出/投资周期复盘）自动填入今天，
+      // 周复盘开始/结束日期自动填入本周；已有值不覆盖。
+      const defaults: Record<string, any> = { ...initialData };
+      const now = new Date();
+      template.sections.forEach((s) => {
+        if (s.repeatable) return;
+        s.fields.forEach((f) => {
+          if (f.type !== 'date' || f.defaultValue === undefined) return;
+          const val = defaults[f.id];
+          if (val === undefined || val === null || String(val).trim() === '') {
+            defaults[f.id] = resolveDefaultValue(f.defaultValue, now);
+          }
+        });
+      });
+      return defaults;
     }
     const defaults: Record<string, any> = {};
     const now = new Date();
@@ -467,46 +479,17 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       initialData?._status as 'draft' | 'completed' || 'draft'
   );
 
-  // 投资清单：买入单/卖出单关联的仓位单（卖出上下文/复盘量化对比的数据源，
-  // 平均成本、剩余持仓、目标价、止损价等从仓位单派生，而非本单据自身的买入字段）
-  const [linkedPosition, setLinkedPosition] = useState<FormRecord | undefined>(undefined);
+  // 投资清单：买卖单 ↔ 仓位单联动（关联仓位单加载、卖出单平均买入上下文注入、保存后汇总联动）
   const positionIdWatch = watch('position_record_id') as string | undefined;
-  useEffect(() => {
-    if (template.id !== 'investment_checklist' || !positionIdWatch) {
-      setLinkedPosition(undefined);
-      return;
-    }
-    let cancelled = false;
-    getRecord(positionIdWatch).then((pos) => {
-      if (!cancelled) setLinkedPosition(pos);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [template.id, positionIdWatch]);
-
-  // 卖出单：注入关联仓位单的「加权平均买入日期」+「平均买入价」为派生字段。
-  // 新模型卖出单本身不填写买入信息，但盈亏%（sell_pnl_percent）与持仓周期（sell_hold_days）
-  // 两个 computed 字段依赖 buy_price/buy_date —— 注入后即可自动计算并随记录持久化，
-  // 持仓周期按加权平均买入时间（Σ数量×买入日期 / Σ数量，与加权平均买入价同思路）计算。
-  // 仅当卖出单尚无买入上下文时注入（幂等，不覆盖已有值）。
-  useEffect(() => {
-    if (template.id !== 'investment_checklist' || recordRole !== 'sell' || !linkedPosition) return;
-    const buyLots = Array.isArray(linkedPosition.data.merged_buy_lots)
-        ? (linkedPosition.data.merged_buy_lots as { date?: string; qty?: string | number }[])
-        : [];
-    const avgDate = weightedAvgBuyDate(buyLots);
-    const avgPrice = linkedPosition.data.buy_price as string | number | undefined;
-    if (avgDate && isFieldEmpty(getValues('buy_date'))) {
-      setValue('buy_date', avgDate, { shouldDirty: false });
-    }
-    if (
-        avgPrice !== undefined && avgPrice !== null && String(avgPrice).trim() !== '' &&
-        isFieldEmpty(getValues('buy_price'))
-    ) {
-      setValue('buy_price', String(avgPrice), { shouldDirty: false });
-    }
-  }, [template.id, recordRole, linkedPosition, getValues, setValue]);
+  const { linkedPosition, linkSaveAfterSave } = useInvestmentLinked({
+    templateId: template.id,
+    recordRole,
+    positionId: positionIdWatch,
+    positionCooldownDays: cooldownDays.position,
+    getValues,
+    setValue,
+    showToast,
+  });
 
   const performSave = useCallback(
       async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {
@@ -520,7 +503,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           const finalStatus: 'draft' | 'completed' =
               status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
 
-          // 投资检查清单：保存前同步 sell_review_entries → merged_reviews（Trade Review 层）
+          // 投资检查清单：保存前同步卖出复盘 → merged_reviews（Trade Review 层）
+          // （卖出单=顶层 sell_review_* 字段自动关联；仓位单/旧模型=sell_review_entries 条目）
           // + position_review_* → merged_position_review（Position Review 层，仅仓位单/旧模型）
           if (template.id === 'investment_checklist') {
             const currentFormData = getValues();
@@ -539,50 +523,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           const record = buildRecord(finalStatus);
           await save(record);
 
-          // 投资清单：保存后处理
-          // - 新模型（record_role）：买入单/卖出单独立，保存后联动刷新关联仓位单的汇总
-          // - 旧模型（无 role）：保留自动合并逻辑（同代码开放持仓合并 / 卖出批次拆分）
-          if (template.id === 'investment_checklist' && !skipMerge) {
-            const code = String(record.data.buy_company_name ?? '').trim();
-            if (code) {
-              if (recordRole === 'buy' || recordRole === 'sell') {
-                // 新模型：联动仓位单
-                // 1) 买入单：完成买入阶段（代码/逻辑/检查齐备）且尚无仓位单 → 同步创建仓位单
-                // 2) 对已有仓位单：刷新汇总（merged_buy_lots / merged_sell_lots / 剩余持仓 / 清仓状态）
-                let position: FormRecord | undefined;
-                const positionId = record.data.position_record_id as string | undefined;
-                if (positionId) {
-                  position = await getRecord(positionId);
-                }
-                const allRecords = await getAllRecords('investment_checklist');
-                if (recordRole === 'buy' && !position) {
-                  // 买入单完成 → 创建/关联仓位单（幂等）
-                  const buyingDone =
-                      !isFieldEmpty(record.data.buy_company_name) &&
-                      !isFieldEmpty(record.data.buy_thesis) &&
-                      record.data.buy_understand_business === true;
-                  if (buyingDone) {
-                    position = await ensurePositionForBuyRecord(record, allRecords);
-                    if (position) {
-                      showToast(`买入记录已完成，已自动建立 ${code} 的持仓记录`, 'success');
-                    }
-                  }
-                }
-                if (position) {
-                  const refreshed = await getAllRecords('investment_checklist');
-                  const { buyRecords, sellRecords } = getLinkedRecords(position, refreshed);
-                  const updated = syncPositionFromLinked(position, buyRecords, sellRecords);
-                  await save(updated);
-                  if (recordRole === 'sell' && updated.data.sold_out === true) {
-                    showToast(
-                        `${code} 已全部卖出，${cooldownDays.position} 天后可进行投资周期复盘`,
-                        'success'
-                    );
-                  }
-                }
-              }
-            }
-          }
+          // 投资清单：保存后联动仓位单（买入单完成创建仓位单 / 卖出单刷新汇总）——
+          // 30 秒自动保存（skipMerge=true）不触发，避免填写中被打断
+          await linkSaveAfterSave(record, skipMerge);
 
           setLastSaved(new Date());
           setSaveStatus('saved');
@@ -595,7 +538,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           return null;
         }
       },
-      [buildRecord, save, recordStatus, getValues, setValue, template, showToast, cooldownDays]
+      [buildRecord, save, recordStatus, getValues, setValue, template, linkSaveAfterSave]
   );
 
   // Auto-save every 30 seconds (skip fully read-only completed records)
@@ -921,26 +864,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // For annual review: get the year value for the sidebar
   const annualYearValue = template.id === 'annual_review' ? (watch('annual_year') as string || String(new Date().getFullYear())) : '';
 
-  // 投资清单：merged_trades 派生（SELL 选项注入 + 投资周期概览交易笔数）
+  // 投资清单：merged_trades 派生（投资周期概览交易笔数等）
   const mergedTradesWatch = watch('merged_trades') as InvestmentTrade[] | undefined;
-
-  // 投资清单：SELL trades 选项（用于 sell_review_trade_id select 动态注入）
-  // 每笔卖出交易生成一个选项，格式：卖出日期 · 价格 · 数量
-  const sellTradeOptions = useMemo(() => {
-    if (template.id !== 'investment_checklist' || !Array.isArray(mergedTradesWatch)) return undefined;
-    const sellTrades = mergedTradesWatch.filter((t) => t.type === 'SELL');
-    if (sellTrades.length === 0) return undefined;
-    return sellTrades.map((t) => ({
-      value: t.id,
-      label: `${t.date || '未填日期'} · ${t.price ?? '-'} · ${t.qty ?? '-'}股${t.reason ? `（${t.reason}）` : ''}`,
-    }));
-  }, [template.id, mergedTradesWatch]);
-
-  // 投资清单：可重复段字段选项覆盖（sell_review_trade_id ← SELL trades）
-  const repeatableFieldOptions = useMemo(() => {
-    if (!sellTradeOptions) return undefined;
-    return { sell_review_trade_id: sellTradeOptions };
-  }, [sellTradeOptions]);
 
   // Templates that support smart reference sidebar
   const SIDEBAR_TEMPLATES = ['weekly_review', 'monthly_review', 'annual_review'];
@@ -1175,7 +1100,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           entries={(watch(`${activeSection.id}_entries`) as Record<string, unknown>[] | undefined) || []}
                           onChange={(newEntries) => setValue(`${activeSection.id}_entries`, newEntries, { shouldDirty: true })}
                           templateId={template.id}
-                          fieldOptionsOverride={repeatableFieldOptions}
                       />
                     </div>
                 ) : (

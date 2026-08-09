@@ -25,10 +25,11 @@ export default function InvestmentTable({ records, onSelect }: InvestmentTablePr
           ? { label: '已复盘', cls: 'bg-green-100 text-green-700' }
           : { label: '买入 · 待复盘', cls: 'bg-blue-100 text-blue-600' };
     }
-    // 卖出记录：卖出后可复盘（sell_review_entries）
+    // 卖出记录：卖出后可复盘（顶层 sell_lesson 或旧 entries）
     if (role === 'sell') {
       const entries = r.data.sell_review_entries as Record<string, unknown>[] | undefined;
-      const reviewed = Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson));
+      const reviewed = !isFieldEmpty(r.data.sell_lesson) ||
+          (Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson)));
       return reviewed
           ? { label: '已复盘', cls: 'bg-green-100 text-green-700' }
           : { label: '卖出 · 待复盘', cls: 'bg-amber-100 text-amber-700' };

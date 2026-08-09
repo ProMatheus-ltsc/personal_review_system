@@ -6,19 +6,19 @@
  * 2. 输入股票代码后按 Enter 或点「查询」查询仓位单：
  *    - 已有仓位：显示仓位概览 + 操作面板（持有中复盘 / 卖出 / 买入）
  *    - 无仓位：仅允许创建买入单（买入单完成后自动同步创建仓位单）
- * 3. 复盘冷静期设置：买入/卖出/投资周期复盘各场景解锁天数可在页面配置
+ *
+ * 复盘等待期（各场景解锁天数）配置已移至「数据管理」页面统一管理。
  *
  * 操作语义：
  * - 持有中复盘：进入仓位单（记录持仓检查）
- * - 卖出：新建独立卖出复盘单（关联仓位单），冷静期后复盘卖点
- * - 买入：新建独立买入复盘单，完成后同步创建仓位单，冷静期后复盘买点
+ * - 卖出：新建独立卖出复盘单（关联仓位单），等待期后复盘卖点
+ * - 买入：新建独立买入复盘单，完成后同步创建仓位单，等待期后复盘买点
  */
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { getAllRecords, getSetting, setSetting } from '@/services/db';
+import { getAllRecords } from '@/services/db';
 import type { FormRecord } from '@/types';
-import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
 import {
   collectPositionCodes,
   findPositionByCode,
@@ -30,14 +30,6 @@ import {
 /** 热门股票（无历史持仓时也提供快速选项） */
 const HOT_STOCKS = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', '00700', '600519', '000858', '300750'];
 
-/** 等待期场景配置项描述 */
-const COOLDOWN_ITEMS = [
-  { key: COOLDOWN_SETTINGS.BUY, label: '买入复盘等待期', hint: '买入后，等待多久才能复盘买入决策' },
-  { key: COOLDOWN_SETTINGS.SELL, label: '卖出复盘等待期', hint: '卖出后，等待多久才能复盘卖出决策' },
-  { key: COOLDOWN_SETTINGS.POSITION, label: '投资周期复盘等待期', hint: '全部卖出后，等待多久才能复盘整个投资过程' },
-  { key: COOLDOWN_SETTINGS.DECISION, label: '决策日志长期复盘等待期', hint: '决策完成后，等待多久才能复盘决策结果' },
-] as const;
-
 export default function InvestmentEntry() {
   const navigate = useNavigate();
   const [code, setCode] = useState('');
@@ -46,15 +38,6 @@ export default function InvestmentEntry() {
   const [allRecords, setAllRecords] = useState<FormRecord[]>([]);
   const [creating, setCreating] = useState<null | 'buy' | 'sell'>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // 等待期设置（按账户存储）
-  const [cooldownInputs, setCooldownInputs] = useState<Record<string, string>>({
-    [COOLDOWN_SETTINGS.BUY]: String(DEFAULT_COOLDOWN_DAYS),
-    [COOLDOWN_SETTINGS.SELL]: String(DEFAULT_COOLDOWN_DAYS),
-    [COOLDOWN_SETTINGS.POSITION]: String(DEFAULT_COOLDOWN_DAYS),
-    [COOLDOWN_SETTINGS.DECISION]: String(DEFAULT_COOLDOWN_DAYS),
-  });
-  const [cooldownSaved, setCooldownSaved] = useState(false);
 
   // 加载全部投资清单记录（用于查持仓与历史持仓快速选择）
   const loadRecords = useCallback(async () => {
@@ -66,21 +49,6 @@ export default function InvestmentEntry() {
   // 打开页面即加载历史持仓（快速选择前置到输入之前）
   useEffect(() => {
     loadRecords();
-    // 读取等待期配置
-    (async () => {
-      const [buy, sell, pos, decision] = await Promise.all([
-        getSetting(COOLDOWN_SETTINGS.BUY),
-        getSetting(COOLDOWN_SETTINGS.SELL),
-        getSetting(COOLDOWN_SETTINGS.POSITION),
-        getSetting(COOLDOWN_SETTINGS.DECISION),
-      ]);
-      setCooldownInputs({
-        [COOLDOWN_SETTINGS.BUY]: String(buy ?? DEFAULT_COOLDOWN_DAYS),
-        [COOLDOWN_SETTINGS.SELL]: String(sell ?? DEFAULT_COOLDOWN_DAYS),
-        [COOLDOWN_SETTINGS.POSITION]: String(pos ?? DEFAULT_COOLDOWN_DAYS),
-        [COOLDOWN_SETTINGS.DECISION]: String(decision ?? DEFAULT_COOLDOWN_DAYS),
-      });
-    })();
   }, [loadRecords]);
 
   // 历史持仓代码（快速选择，输入前即展示）
@@ -88,25 +56,6 @@ export default function InvestmentEntry() {
   // 当前输入是否命中已有仓位
   const inputCode = normalizeCode(code);
   const matched = existingCodes.find((c) => c === inputCode);
-
-  /** 保存冷静期配置 */
-  const handleSaveCooldowns = useCallback(async () => {
-    for (const item of COOLDOWN_ITEMS) {
-      const raw = cooldownInputs[item.key]?.trim();
-      const n = raw === '' ? 0 : Number(raw);
-      const valid = Number.isFinite(n) && n >= 0;
-      if (!valid) {
-        setError(`「${item.label}」需为 0 或正整数`);
-        return;
-      }
-    }
-    for (const item of COOLDOWN_ITEMS) {
-      await setSetting(item.key, String(Math.round(Number(cooldownInputs[item.key]))));
-    }
-    setCooldownSaved(true);
-    setTimeout(() => setCooldownSaved(false), 2000);
-    setError(null);
-  }, [cooldownInputs]);
 
   // 查询代码（按钮或 Enter 触发）
   const handleQuery = useCallback(async () => {
@@ -338,46 +287,6 @@ export default function InvestmentEntry() {
               </button>
             </div>
         )}
-
-        {/* 复盘冷静期设置（按场景可配置） */}
-        <div className="bg-white border border-gray-200 rounded-lg p-5 mb-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-1">
-            ⏱ 复盘等待期设置
-          </h3>
-          <p className="text-xs text-gray-400 mb-3">
-            每次复盘前需要等待的天数，可按场景分别设置（0 表示无需等待；修改后对新记录生效）
-          </p>
-          <div className="space-y-3">
-            {COOLDOWN_ITEMS.map((item) => (
-                <div key={item.key} className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-700">{item.label}</p>
-                    <p className="text-[11px] text-gray-400">{item.hint}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                        type="number"
-                        min={0}
-                        max={365}
-                        value={cooldownInputs[item.key]}
-                        onChange={(e) => setCooldownInputs((prev) => ({ ...prev, [item.key]: e.target.value }))}
-                        className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                    <span className="text-xs text-gray-400">天</span>
-                  </div>
-                </div>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center gap-3">
-            <button
-                onClick={handleSaveCooldowns}
-                className="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              保存设置
-            </button>
-            {cooldownSaved && <span className="text-sm text-green-600">✅ 已保存</span>}
-          </div>
-        </div>
 
         {/* 操作说明 */}
         <div className="bg-gray-50 border border-gray-100 rounded-lg p-4 text-xs text-gray-500 space-y-1.5">

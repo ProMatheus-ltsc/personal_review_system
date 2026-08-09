@@ -12,8 +12,8 @@ import {
   calcInvestmentStats,
   calcTradeDetails,
   getAllInvestmentRecords,
-  TimeRange,
-} from '@/services/stats';
+} from '@/services/investmentStats';
+import type { TimeRange } from '@/services/stats';
 
 interface Props {
   timeRange: TimeRange;

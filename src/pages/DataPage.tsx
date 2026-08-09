@@ -20,6 +20,15 @@ import {
 } from '@/services/db';
 import { StatsPanel } from '@/components/stats';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
+
+/** 复盘等待期配置项（按账户存储，各场景独立） */
+const COOLDOWN_ITEMS = [
+  { key: COOLDOWN_SETTINGS.BUY, label: '买入复盘等待期', hint: '买入后，等待多久才能复盘买入决策' },
+  { key: COOLDOWN_SETTINGS.SELL, label: '卖出复盘等待期', hint: '卖出后，等待多久才能复盘卖出决策' },
+  { key: COOLDOWN_SETTINGS.POSITION, label: '投资周期复盘等待期', hint: '全部卖出后，等待多久才能复盘整个投资过程' },
+  { key: COOLDOWN_SETTINGS.DECISION, label: '决策日志长期复盘等待期', hint: '决策完成后，等待多久才能复盘决策结果' },
+] as const;
 
 export default function DataPage() {
   const [stats, setStats] = useState<{
@@ -34,10 +43,52 @@ export default function DataPage() {
   const [exporting, setExporting] = useState(false);
   const [pendingImportText, setPendingImportText] = useState<string | null>(null);
   const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
+  // 复盘等待期设置（按账户存储，默认 30 天）
+  const [cooldownInputs, setCooldownInputs] = useState<Record<string, string>>({
+    [COOLDOWN_SETTINGS.BUY]: String(DEFAULT_COOLDOWN_DAYS),
+    [COOLDOWN_SETTINGS.SELL]: String(DEFAULT_COOLDOWN_DAYS),
+    [COOLDOWN_SETTINGS.POSITION]: String(DEFAULT_COOLDOWN_DAYS),
+    [COOLDOWN_SETTINGS.DECISION]: String(DEFAULT_COOLDOWN_DAYS),
+  });
+  const [cooldownSaved, setCooldownSaved] = useState(false);
+  const [cooldownError, setCooldownError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
+    // 加载复盘等待期配置
+    (async () => {
+      const [buy, sell, pos, decision] = await Promise.all([
+        getSetting(COOLDOWN_SETTINGS.BUY),
+        getSetting(COOLDOWN_SETTINGS.SELL),
+        getSetting(COOLDOWN_SETTINGS.POSITION),
+        getSetting(COOLDOWN_SETTINGS.DECISION),
+      ]);
+      setCooldownInputs({
+        [COOLDOWN_SETTINGS.BUY]: String(buy ?? DEFAULT_COOLDOWN_DAYS),
+        [COOLDOWN_SETTINGS.SELL]: String(sell ?? DEFAULT_COOLDOWN_DAYS),
+        [COOLDOWN_SETTINGS.POSITION]: String(pos ?? DEFAULT_COOLDOWN_DAYS),
+        [COOLDOWN_SETTINGS.DECISION]: String(decision ?? DEFAULT_COOLDOWN_DAYS),
+      });
+    })();
   }, []);
+
+  /** 保存复盘等待期配置（0 = 无需等待；对新记录生效） */
+  const handleSaveCooldowns = async () => {
+    for (const item of COOLDOWN_ITEMS) {
+      const raw = cooldownInputs[item.key]?.trim();
+      const n = raw === '' ? 0 : Number(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        setCooldownError(`「${item.label}」需为 0 或正整数`);
+        return;
+      }
+    }
+    for (const item of COOLDOWN_ITEMS) {
+      await setSetting(item.key, String(Math.round(Number(cooldownInputs[item.key]))));
+    }
+    setCooldownSaved(true);
+    setTimeout(() => setCooldownSaved(false), 2000);
+    setCooldownError(null);
+  };
 
   const loadData = async () => {
     const s = await getRecordStats();
@@ -244,6 +295,49 @@ export default function DataPage() {
                   {importResult}
                 </p>
             )}
+          </div>
+        </section>
+
+        {/* 复盘等待期设置 */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span>⏱</span> 复盘等待期设置
+          </h2>
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <p className="text-xs text-gray-400 mb-3">
+              每次复盘前需要等待的天数，可按场景分别设置（0 表示无需等待；修改后对新记录生效）
+            </p>
+            <div className="space-y-3">
+              {COOLDOWN_ITEMS.map((item) => (
+                  <div key={item.key} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-700">{item.label}</p>
+                      <p className="text-[11px] text-gray-400">{item.hint}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                          type="number"
+                          min={0}
+                          max={365}
+                          value={cooldownInputs[item.key]}
+                          onChange={(e) => setCooldownInputs((prev) => ({ ...prev, [item.key]: e.target.value }))}
+                          className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <span className="text-xs text-gray-400">天</span>
+                    </div>
+                  </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                  onClick={handleSaveCooldowns}
+                  className="px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                保存设置
+              </button>
+              {cooldownSaved && <span className="text-sm text-green-600">✅ 已保存</span>}
+              {cooldownError && <span className="text-sm text-red-600">{cooldownError}</span>}
+            </div>
           </div>
         </section>
 

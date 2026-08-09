@@ -212,15 +212,8 @@ export const investmentChecklistTemplate: FormTemplate = {
     {
       id: 'sell_review',
       title: '卖出复盘',
-      description: '每笔卖出独立复盘 — 卖出也是一种决策，值得单独反思',
-      repeatable: true,
-      repeatLabel: '+ 添加一笔卖出复盘',
+      description: '卖出也是一种决策，值得单独反思 — 本笔卖出的复盘会自动关联，无需手动选择',
       fields: [
-        // 关联的卖出交易（选项由 FormRenderer 从 SELL trades 动态注入）
-        { id: 'sell_review_trade_id', label: '关联卖出交易', type: 'select', priority: 'required',
-          placeholder: '选择要复盘的卖出交易',
-          hint: '每笔卖出可独立复盘，选择对应的一笔卖出进行反思',
-          options: [] },
         { id: 'sell_review_date', label: '复盘日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
         { id: 'sell_thesis_valid', label: '买入逻辑验证', type: 'radio', priority: 'required', options: [
             { value: '完全正确', label: '完全正确' }, { value: '部分正确', label: '部分正确' }, { value: '完全错误', label: '完全错误' },

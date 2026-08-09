@@ -229,11 +229,12 @@ export default function DashboardPage() {
           if (reviewed) return;
           pushItem(`buy_${record.id}`, `${code} · 买入复盘`, `买于 ${buyDate}`, buyDate);
         } else if (role === 'sell') {
-          // 卖出单：卖出日期 +30 天，卖出复盘（sell_review_entries）未填 → 提醒
+          // 卖出单：卖出日期 +30 天，卖出复盘未填（顶层 sell_lesson 或旧 entries）→ 提醒
           const sellDate = record.data.sell_date as string | undefined;
           if (!sellDate) return;
           const entries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
-          const reviewed = Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson));
+          const reviewed = !isFieldEmpty(record.data.sell_lesson) ||
+              (Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson)));
           if (reviewed) return;
           const price = record.data.sell_exit_price as string | number | undefined;
           const qty = record.data.sell_quantity as string | number | undefined;

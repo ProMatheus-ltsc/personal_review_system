@@ -43,8 +43,6 @@ export interface InvestmentTrade {
   qty: number;
   /** 卖出原因（SELL 才有） */
   reason?: string;
-  /** 来源单据 id */
-  source_record_id?: string;
   /** 批次标识（同一次卖出编辑会话内多次自动保存去重，SELL 用 batch_id 作为 trade id 保证稳定） */
   batch_id?: string;
 }
@@ -88,8 +86,6 @@ export interface InvestmentReview {
  */
 export interface PositionReview {
   id: string;
-  /** 关联的 Position（单据）id */
-  position_id: string;
   /** 复盘日期 */
   reviewed_at?: string;
   /** 原始投资逻辑回顾 */
@@ -152,8 +148,6 @@ interface LotInput {
   price?: string | number;
   qty?: string | number;
   reason?: string;
-  /** 来源单据 id（同一单据的卖出批次据此去重） */
-  source_record_id?: string;
   /** 当前编辑会话的批次标识（同一笔卖出多次自动保存据此更新同一条，而非按取值去重） */
   batch_id?: string;
 }
@@ -301,7 +295,6 @@ export function ensureTradesInitialized(data: Record<string, unknown>): Record<s
           qty: q,
           reason: lot.reason,
           batch_id: lot.batch_id,
-          source_record_id: lot.source_record_id,
         });
       }
     });
@@ -323,10 +316,27 @@ export function ensureTradesInitialized(data: Record<string, unknown>): Record<s
           qty: q,
           reason: lot.reason,
           batch_id: lot.batch_id,
-          source_record_id: lot.source_record_id,
         });
       }
     });
+  }
+
+  // 卖出单（record_role=sell）：自身即一笔卖出决策，但数据里没有 merged_sell_lots
+  // （那是仓位单的汇总字段）→ 从顶层卖出字段派生 SELL Trade。
+  // 固定 id 'sell_self' 保证幂等（单笔卖出单只有这一笔卖出），供卖出复盘自动关联。
+  if (result.record_role === 'sell') {
+    const sp = toNum(result.sell_exit_price);
+    const sq = toNum(result.sell_quantity);
+    if (sp !== undefined && sq !== undefined && !trades.some((t) => t.type === 'SELL' && t.id === 'sell_self')) {
+      trades.push({
+        id: 'sell_self',
+        type: 'SELL',
+        date: result.sell_date as string | undefined,
+        price: sp,
+        qty: sq,
+        reason: result.sell_reason as string | undefined,
+      });
+    }
   }
 
   result.merged_trades = trades;
@@ -397,7 +407,6 @@ export function ensureTradesInitialized(data: Record<string, unknown>): Record<s
     // 清仓但无 PositionReview → 创建骨架
     result.merged_position_review = {
       id: uuidv4(),
-      position_id: String(result._recordId || ''),
     } as PositionReview;
   } else if (!isClosed && result.merged_position_review) {
     // 未清仓但有 PositionReview（撤销卖出后回退）→ 移除
@@ -447,9 +456,26 @@ export function syncReviewsFromEntries(data: Record<string, unknown>): Record<st
   const allTradeIds = new Set(trades.map((t) => t.id));
   reviews = reviews.filter((rv) => allTradeIds.has(rv.trade_id));
 
-  // 按 trade_id 同步 SELL entries → reviews（BUY reviews 不从 entries 同步）
+  // 按 trade_id 同步 SELL reviews（BUY reviews 不同步）
   reviews.forEach((review) => {
-    if (review.trade_type === 'BUY') return; // BUY review 跳过 entries 同步
+    if (review.trade_type === 'BUY') return; // BUY review 跳过同步
+
+    // 卖出单（record_role=sell）：单次复盘，内容存顶层 sell_review_* 字段，
+    // 自动关联到本单唯一的 SELL Trade（id='sell_self'），无需用户手动选择
+    if (result.record_role === 'sell' && review.trade_id === 'sell_self') {
+      Object.entries(SELL_REVIEW_FIELD_MAP).forEach(([entryField, reviewField]) => {
+        if (entryField === 'sell_review_trade_id') return; // 自动关联，无顶层对应字段
+        const val = result[entryField];
+        if (val !== undefined && !isFieldEmpty(val)) {
+          (review as unknown as Record<string, unknown>)[reviewField] = val;
+        } else {
+          delete (review as unknown as Record<string, unknown>)[reviewField];
+        }
+      });
+      return;
+    }
+
+    // 仓位单/旧模型：按 sell_review_entries 条目同步
     const entry = entries.find((e) => e.sell_review_trade_id === review.trade_id);
     if (entry) {
       // 用 entry 字段更新 review
@@ -499,7 +525,7 @@ export function syncPositionReview(data: Record<string, unknown>): Record<string
   // 清仓 → 从顶层字段构建/更新 PositionReview
   let pr = result.merged_position_review as PositionReview | undefined;
   if (!pr) {
-    pr = { id: uuidv4(), position_id: String(result._recordId || '') };
+    pr = { id: uuidv4() };
   }
 
   Object.entries(POSITION_REVIEW_FIELD_MAP).forEach(([fieldId, reviewField]) => {
@@ -641,7 +667,7 @@ export function syncPositionFromLinked(
   const data: Record<string, unknown> = { ...position.data };
 
   // --- 买入侧：从买入单汇总 ---
-  const buyLots: { date?: string; price: string | number; qty: string | number; reason?: string; source_record_id: string }[] = [];
+  const buyLots: { date?: string; price: string | number; qty: string | number; reason?: string }[] = [];
   let totalBuyQty = 0;
   let buyCost = 0;
   buyRecords.forEach((r) => {
@@ -653,7 +679,6 @@ export function syncPositionFromLinked(
         price: p,
         qty: q,
         reason: String(r.data.buy_thesis ?? ''),
-        source_record_id: r.id,
       });
       buyCost += p * q;
       totalBuyQty += q;
@@ -667,7 +692,7 @@ export function syncPositionFromLinked(
   }
 
   // --- 卖出侧：从卖出单汇总 ---
-  const sellLots: { date?: string; price: string | number; qty: string | number; reason?: string; source_record_id: string }[] = [];
+  const sellLots: { date?: string; price: string | number; qty: string | number; reason?: string }[] = [];
   let totalSellQty = 0;
   let sellCost = 0;
   sellRecords.forEach((r) => {
@@ -679,7 +704,6 @@ export function syncPositionFromLinked(
         price: p,
         qty: q,
         reason: String(r.data.sell_reason ?? ''),
-        source_record_id: r.id,
       });
       sellCost += p * q;
       totalSellQty += q;
