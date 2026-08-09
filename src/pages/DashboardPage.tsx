@@ -48,6 +48,12 @@ export default function DashboardPage() {
   const [lastBackupRecordCount, setLastBackupRecordCount] = useState<number>(0);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const [backupCheckDone, setBackupCheckDone] = useState(false);
+  // 测试模式：复盘提醒立即生效（冷静期 0 天）
+  const [testMode, setTestMode] = useState(false);
+
+  useEffect(() => {
+    getSetting('test_mode').then((v) => setTestMode(v === 'true'));
+  }, []);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -132,11 +138,12 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [records]);
 
-  // 当前持仓：未清仓的投资检查清单单据（未全部卖出、无顶层卖出价）
+  // 当前持仓：仓位单（record_role=position）且未清仓的投资记录
   const positions = useMemo<PositionItem[]>(() => {
     return records
       .filter((r) => {
         if (r.templateId !== 'investment_checklist') return false;
+        if (r.data.record_role !== 'position') return false;
         if (r.data.sold_out === true) return false;
         const sellPrice = r.data.sell_exit_price;
         if (sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '') return false;
@@ -158,62 +165,86 @@ export default function DashboardPage() {
       .filter((p) => p.remainingQty > 0);
   }, [records]);
 
-  // 复盘提醒：投资检查清单按每笔卖出（Trade 层优先）独立提醒，决策日志按完成时间
+  // 复盘提醒：投资检查清单按单据角色独立提醒（买入单/卖出单/仓位单各 +30 天），决策日志按完成时间
   const { readyForReview, pendingReview } = useMemo(() => {
-    const COOLDOWN_DAYS = 30;
+    // 测试模式：冷静期 0 天（所有待复盘立即 ready）
+    const COOLDOWN_DAYS = testMode ? 0 : 30;
     const ready: ReviewItem[] = [];
     const pending: ReviewItem[] = [];
 
     records.forEach((record) => {
       if (record.templateId === 'investment_checklist') {
-        // Trade 层优先：按每笔未复盘 SELL 交易独立提醒（该笔卖出日期 +30 天）
-        const initialized = ensureTradesInitialized(record.data);
-        const recordWithInit = { ...record, data: initialized };
-        const pendingTrades = findPendingReviewTrades(recordWithInit);
-
-        if (pendingTrades.length > 0) {
-          const code = (record.data.buy_company_name as string) || '未命名标的';
-          pendingTrades.forEach((trade) => {
-            if (!trade.date) return;
-            const parsed = new Date(trade.date);
-            if (isNaN(parsed.getTime())) return;
-            const daysSince = Math.floor(
-              (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24)
-            );
-            const item: ReviewItem = {
-              id: `${record.id}_${trade.id}`,
-              templateId: 'investment_checklist',
-              title: `${code} · 卖出${trade.qty}股@${trade.price}`,
-              dateLabel: `卖出于 ${trade.date}`,
-              link: `/form/investment_checklist/${record.id}`,
-            };
-            if (daysSince >= COOLDOWN_DAYS) ready.push(item);
-            else pending.push(item);
-          });
-          return; // 已通过 Trade 层处理，跳过旧的整单逻辑
-        }
-
-        // 回退：旧单据无结构化 trades → 整单按 sell_date +30 天提醒
-        const sellDate = record.data.sell_date as string | undefined;
-        if (!sellDate || String(sellDate).trim() === '') return;
-        const reviewEntries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
-        const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
-        if (reviewed) return;
-
-        const parsed = new Date(String(sellDate));
-        if (isNaN(parsed.getTime())) return;
-        const daysSince = Math.floor(
-          (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        const item: ReviewItem = {
-          id: record.id,
-          templateId: 'investment_checklist',
-          title: (record.data.buy_company_name as string) || '未命名标的',
-          dateLabel: `卖出于 ${String(sellDate)}`,
-          link: `/form/investment_checklist/${record.id}`,
+        const role = record.data.record_role as string | undefined;
+        const code = (record.data.buy_company_name as string) || '未命名标的';
+        const pushItem = (key: string, title: string, dateLabel: string, dateStr: string) => {
+          const parsed = new Date(dateStr);
+          if (isNaN(parsed.getTime())) return;
+          const daysSince = Math.floor((Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24));
+          const item: ReviewItem = {
+            id: key,
+            templateId: 'investment_checklist',
+            title,
+            dateLabel,
+            link: `/form/investment_checklist/${record.id}`,
+          };
+          if (daysSince >= COOLDOWN_DAYS) ready.push(item);
+          else pending.push(item);
         };
-        if (daysSince >= COOLDOWN_DAYS) ready.push(item);
-        else pending.push(item);
+
+        if (role === 'buy') {
+          // 买入单：买入日期 +30 天，买入复盘（buy_review_lesson）未填 → 提醒
+          const buyDate = record.data.buy_date as string | undefined;
+          if (!buyDate) return;
+          const reviewed = !isFieldEmpty(record.data.buy_review_lesson);
+          if (reviewed) return;
+          pushItem(`buy_${record.id}`, `${code} · 买入复盘`, `买于 ${buyDate}`, buyDate);
+        } else if (role === 'sell') {
+          // 卖出单：卖出日期 +30 天，卖出复盘（sell_review_entries）未填 → 提醒
+          const sellDate = record.data.sell_date as string | undefined;
+          if (!sellDate) return;
+          const entries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
+          const reviewed = Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson));
+          if (reviewed) return;
+          const price = record.data.sell_exit_price as string | number | undefined;
+          const qty = record.data.sell_quantity as string | number | undefined;
+          pushItem(
+              `sell_${record.id}`,
+              `${code} · 卖出${qty ? `${qty}股` : ''}${price ? `@${price}` : ''}复盘`,
+              `卖于 ${sellDate}`,
+              sellDate
+          );
+        } else if (role === 'position') {
+          // 仓位单：清仓后最后卖出日 +30 天，投资周期复盘（position_lesson）未填 → 提醒
+          if (record.data.sold_out !== true) return;
+          const sellDate = record.data.sell_date as string | undefined;
+          if (!sellDate) return;
+          const reviewed = !isFieldEmpty(record.data.position_lesson);
+          if (reviewed) return;
+          pushItem(`pos_${record.id}`, `${code} · 投资周期复盘`, `清仓于 ${sellDate}`, sellDate);
+        } else {
+          // 旧模型（无 role）：Trade 层优先按每笔卖出提醒，回退整单
+          const initialized = ensureTradesInitialized(record.data);
+          const recordWithInit = { ...record, data: initialized };
+          const pendingTrades = findPendingReviewTrades(recordWithInit);
+          if (pendingTrades.length > 0) {
+            pendingTrades.forEach((trade) => {
+              if (!trade.date) return;
+              pushItem(
+                  `${record.id}_${trade.id}`,
+                  `${code} · 卖出${trade.qty}股@${trade.price}`,
+                  `卖出于 ${trade.date}`,
+                  trade.date
+              );
+            });
+            return;
+          }
+          const sellDate = record.data.sell_date as string | undefined;
+          if (!sellDate || String(sellDate).trim() === '') return;
+          const reviewEntries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
+          const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
+          if (reviewed) return;
+          pushItem(record.id, code, `卖出于 ${String(sellDate)}`, String(sellDate));
+        }
       } else if (record.templateId === 'decision_log' && record.status === 'completed') {
         const completedAt = (record.data._completedAt as string) || record.createdAt.slice(0, 10);
         if (!completedAt || String(completedAt).trim() === '') return;
@@ -240,7 +271,7 @@ export default function DashboardPage() {
     });
 
     return { readyForReview: ready, pendingReview: pending };
-  }, [records]);
+  }, [records, testMode]);
 
   return (
     <div>

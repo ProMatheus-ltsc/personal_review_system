@@ -19,6 +19,12 @@ export interface ValidationError {
   message?: string;
 }
 
+/** 阶段计算选项（用于测试模式跳过冷静期等） */
+export interface PhaseCalcOptions {
+  /** 跳过 unlockAfterDays 时间锁（测试模式：复盘立即解锁） */
+  skipCooldown?: boolean;
+}
+
 /**
  * 判断字段值是否为空
  * @param val - 待检查的字段值
@@ -131,9 +137,10 @@ export function validateRequiredFields(
  * @param formData - 当前表单数据
  * @param sections - 模板 sections（用于检查 repeatable 标记）
  * @param recordCreatedAt - 记录创建时间（用于 unlockAfterDays 默认参考日期）
+ * @param options - 计算选项（如测试模式跳过冷静期）
  * @returns 当前阶段的索引
  */
-export function getCurrentPhaseIndex(phases: PhaseConfig[], formData: Record<string, any>, sections?: FormSection[], recordCreatedAt?: string): number {
+export function getCurrentPhaseIndex(phases: PhaseConfig[], formData: Record<string, any>, sections?: FormSection[], recordCreatedAt?: string, options?: PhaseCalcOptions): number {
   for (let i = 0; i < phases.length; i++) {
     const phase = phases[i];
     // Check if this phase's sections are repeatable
@@ -145,17 +152,21 @@ export function getCurrentPhaseIndex(phases: PhaseConfig[], formData: Record<str
       // For repeatable sections, check entries array
       const entriesKey = `${repeatableSection.id}_entries`;
       const entries = formData[entriesKey] as Record<string, unknown>[] | undefined;
-      if (!entries || entries.length === 0) return i;
-      // Check if at least one entry satisfies completionFields
-      const hasCompleteEntry = entries.some((entry) =>
-        phase.completionFields.every((fieldId) => {
-          const val = entry[fieldId];
-          return val !== undefined && val !== null && val !== '' &&
-            !(typeof val === 'string' && val.trim() === '') &&
-            !(typeof val === 'boolean' && val === false);
-        })
-      );
-      if (!hasCompleteEntry) return i;
+      // completionFields 为空 → 该阶段无强制完成项（如仓位单的持有中复盘），
+      // 跳过 entries 检查，允许直接根据下一阶段的时间锁决定是否解锁
+      if (phase.completionFields.length > 0) {
+        if (!entries || entries.length === 0) return i;
+        // Check if at least one entry satisfies completionFields
+        const hasCompleteEntry = entries.some((entry) =>
+          phase.completionFields.every((fieldId) => {
+            const val = entry[fieldId];
+            return val !== undefined && val !== null && val !== '' &&
+              !(typeof val === 'string' && val.trim() === '') &&
+              !(typeof val === 'boolean' && val === false);
+          })
+        );
+        if (!hasCompleteEntry) return i;
+      }
     } else {
       const allComplete = phase.completionFields.every(
         (fieldId) => formData[fieldId] && String(formData[fieldId]).trim() !== ''
@@ -165,7 +176,7 @@ export function getCurrentPhaseIndex(phases: PhaseConfig[], formData: Record<str
 
     // Time lock check: if the NEXT phase has unlockAfterDays, check it
     const nextPhase = phases[i + 1];
-    if (nextPhase?.unlockAfterDays) {
+    if (nextPhase?.unlockAfterDays && !options?.skipCooldown) {
       const unlockDays = nextPhase.unlockAfterDays;
       let referenceDate: Date | null = null;
 
@@ -221,13 +232,19 @@ export function getSectionPhaseIndex(phases: PhaseConfig[], sectionIndex: number
 
 /**
  * 计算某个阶段的时间锁状态
+ * @param phase - 阶段配置
+ * @param formData - 当前表单数据
+ * @param recordCreatedAt - 记录创建时间
+ * @param options - 计算选项（如测试模式跳过冷静期）
  * @returns 如果被锁定，返回解锁日期和剩余天数；否则返回 null
  */
 export function getPhaseTimeLockInfo(
   phase: PhaseConfig,
   formData: Record<string, any>,
-  recordCreatedAt?: string
+  recordCreatedAt?: string,
+  options?: PhaseCalcOptions
 ): { unlockDate: Date; daysRemaining: number } | null {
+  if (options?.skipCooldown) return null; // 测试模式：跳过冷静期
   if (!phase.unlockAfterDays) return null;
 
   const unlockDays = phase.unlockAfterDays;

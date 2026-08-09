@@ -62,7 +62,11 @@ export default function HistoryPage() {
 
   // 当前投资清单记录（仅模板筛选，不过滤搜索/状态，让导出条件独立可控）
   const investmentRecords = useMemo(() => {
-    return records.filter((r) => r.templateId === 'investment_checklist');
+    return records.filter((r) => {
+      if (r.templateId !== 'investment_checklist') return false;
+      const role = r.data.record_role as string | undefined;
+      return role === 'position' || role === 'buy' || role === 'sell';
+    });
   }, [records]);
 
   // 导出过滤条件下符合的记录数（实时预览）
@@ -110,6 +114,14 @@ export default function HistoryPage() {
     // Filter by template
     if (activeTemplateId) {
       result = result.filter((r) => r.templateId === activeTemplateId);
+    }
+
+    // 投资检查清单：仅展示新模型单据（record_role = position/buy/sell），旧格式不展示
+    if (activeTemplateId === 'investment_checklist') {
+      result = result.filter((r) => {
+        const role = r.data.record_role as string | undefined;
+        return role === 'position' || role === 'buy' || role === 'sell';
+      });
     }
 
     // Filter by status

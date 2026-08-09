@@ -993,3 +993,221 @@ export async function undoLastSellBatch(current: FormRecord): Promise<MergeResul
 }
 
 export { PHASE_BUYING, PHASE_HOLDING, PHASE_REVIEW };
+
+// ============================================================
+// 单据角色模型（Position / Buy / Sell 三型单据）
+// 仓位单以股票代码为准，一个代码一份；买入/卖出为独立复盘单
+// ============================================================
+
+export const RECORD_ROLE = {
+  /** 仓位单：代码维度的汇总看板 + 持有中复盘 + 清仓后投资周期复盘 */
+  POSITION: 'position',
+  /** 买入单：一次买入决策记录，30 天后复盘买入 */
+  BUY: 'buy',
+  /** 卖出单：一次卖出决策记录，30 天后复盘卖出 */
+  SELL: 'sell',
+} as const;
+
+export type RecordRole = (typeof RECORD_ROLE)[keyof typeof RECORD_ROLE];
+
+/** 读取单据角色（无 role 的旧数据返回 undefined） */
+export function getRecordRole(r: FormRecord): RecordRole | undefined {
+  const role = r.data.record_role as string | undefined;
+  if (role === RECORD_ROLE.POSITION || role === RECORD_ROLE.BUY || role === RECORD_ROLE.SELL) {
+    return role;
+  }
+  return undefined;
+}
+
+/** 归一化股票代码（大写） */
+export function normalizeCode(v: unknown): string {
+  return String(v ?? '').trim().toUpperCase();
+}
+
+/** 查询某代码的仓位单（存在多个时取最近更新的一条） */
+export function findPositionByCode(records: FormRecord[], code: string): FormRecord | undefined {
+  const upper = normalizeCode(code);
+  if (!upper) return undefined;
+  return records
+    .filter((r) => getRecordRole(r) === RECORD_ROLE.POSITION)
+    .filter((r) => normalizeCode(r.data.buy_company_name) === upper)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+}
+
+/** 收集所有已有仓位代码（用于新建时的快速选择） */
+export function collectPositionCodes(records: FormRecord[]): string[] {
+  const codes = new Set<string>();
+  records.forEach((r) => {
+    if (getRecordRole(r) !== RECORD_ROLE.POSITION) return;
+    const code = normalizeCode(r.data.buy_company_name);
+    if (code) codes.add(code);
+  });
+  return [...codes].sort();
+}
+
+/** 读取仓位单关联的买入单 / 卖出单（linked_*_record_ids） */
+export function getLinkedRecords(
+  position: FormRecord,
+  allRecords: FormRecord[]
+): { buyRecords: FormRecord[]; sellRecords: FormRecord[] } {
+  const buyIds = Array.isArray(position.data.linked_buy_record_ids)
+    ? (position.data.linked_buy_record_ids as string[])
+    : [];
+  const sellIds = Array.isArray(position.data.linked_sell_record_ids)
+    ? (position.data.linked_sell_record_ids as string[])
+    : [];
+  const byId = new Map(allRecords.map((r) => [r.id, r]));
+  return {
+    buyRecords: buyIds
+      .map((id) => byId.get(id))
+      .filter((r): r is FormRecord => !!r)
+      .sort((a, b) => String(a.data.buy_date ?? '').localeCompare(String(b.data.buy_date ?? ''))),
+    sellRecords: sellIds
+      .map((id) => byId.get(id))
+      .filter((r): r is FormRecord => !!r)
+      .sort((a, b) => String(a.data.sell_date ?? '').localeCompare(String(b.data.sell_date ?? ''))),
+  };
+}
+
+/**
+ * 从关联的买入单/卖出单同步仓位单汇总数据：
+ * - merged_buy_lots（逐笔买入明细，来自买入单的买入前段字段）
+ * - merged_sell_lots（逐笔卖出明细，来自卖出单的卖出段字段）
+ * - merged_total_qty / remaining_qty / sold_out / merged_total_sell_qty
+ * - 顶层加权 buy_price / sell_exit_price / sell_date（最后卖出日）
+ * 返回新的仓位单数据（不保存，由调用方决定）。
+ */
+export function syncPositionFromLinked(
+  position: FormRecord,
+  buyRecords: FormRecord[],
+  sellRecords: FormRecord[]
+): FormRecord {
+  const data: Record<string, unknown> = { ...position.data };
+
+  // --- 买入侧：从买入单汇总 ---
+  const buyLots: { date?: string; price: string | number; qty: string | number; reason?: string; source_record_id: string }[] = [];
+  let totalBuyQty = 0;
+  let buyCost = 0;
+  buyRecords.forEach((r) => {
+    const p = toNum(r.data.buy_price);
+    const q = toNum(r.data.buy_quantity);
+    if (p !== undefined && q !== undefined && q > 0) {
+      buyLots.push({
+        date: (r.data.buy_date as string) || undefined,
+        price: p,
+        qty: q,
+        reason: String(r.data.buy_thesis ?? ''),
+        source_record_id: r.id,
+      });
+      buyCost += p * q;
+      totalBuyQty += q;
+    }
+  });
+  data.merged_buy_lots = buyLots;
+  data.merged_total_qty = totalBuyQty;
+  if (totalBuyQty > 0) {
+    data.buy_price = (buyCost / totalBuyQty).toFixed(4);
+    data.buy_date = buyRecords.map((r) => String(r.data.buy_date ?? '')).filter(Boolean).sort()[0] ?? '';
+  }
+
+  // --- 卖出侧：从卖出单汇总 ---
+  const sellLots: { date?: string; price: string | number; qty: string | number; reason?: string; source_record_id: string }[] = [];
+  let totalSellQty = 0;
+  let sellCost = 0;
+  sellRecords.forEach((r) => {
+    const p = toNum(r.data.sell_exit_price);
+    const q = toNum(r.data.sell_quantity);
+    if (p !== undefined && q !== undefined && q > 0) {
+      sellLots.push({
+        date: (r.data.sell_date as string) || undefined,
+        price: p,
+        qty: q,
+        reason: String(r.data.sell_reason ?? ''),
+        source_record_id: r.id,
+      });
+      sellCost += p * q;
+      totalSellQty += q;
+    }
+  });
+  data.merged_sell_lots = sellLots;
+  data.merged_total_sell_qty = totalSellQty;
+  if (totalSellQty > 0) {
+    data.sell_exit_price = (sellCost / totalSellQty).toFixed(4);
+    const lastSellDate = sellRecords.map((r) => String(r.data.sell_date ?? '')).filter(Boolean).sort().pop();
+    if (lastSellDate) data.last_sell_date = lastSellDate;
+    // 顶层 sell_date 恢复为最后卖出日（用于 30 天复盘解锁）
+    data.sell_date = lastSellDate || '';
+  }
+
+  // --- 持仓状态 ---
+  const remaining = totalBuyQty - totalSellQty;
+  const soldOut = totalBuyQty > 0 && remaining === 0;
+  data.remaining_qty = remaining > 0 ? remaining : 0;
+  data.sold_out = soldOut;
+  data.sell_status = soldOut ? 'full' : totalSellQty > 0 ? 'partial' : '';
+
+  return { ...position, data, updatedAt: new Date().toISOString() };
+}
+
+/**
+ * 创建买入单（或卖出单）并建立与仓位单的关联：
+ * - 有仓位单：关联 position_record_id，并把单据 id 追加进仓位单 linked_*_record_ids
+ * - 无仓位单：同时创建仓位单（role=position），建立双向关联
+ * 仓位单汇总在后续 syncPositionFromLinked 时统一刷新。
+ */
+export async function linkNewRecord(
+  newRecord: FormRecord,
+  position: FormRecord | undefined
+): Promise<{ buyRecord?: FormRecord; sellRecord?: FormRecord; position: FormRecord }> {
+  const role = getRecordRole(newRecord);
+  const code = normalizeCode(newRecord.data.buy_company_name);
+
+  let positionData = position;
+  // 无仓位单：创建仓位单骨架（仅记录代码与首笔关联）
+  if (!positionData) {
+    const now = new Date().toISOString();
+    positionData = {
+      id: uuidv4(),
+      templateId: 'investment_checklist',
+      title: `${code} 仓位`,
+      data: {
+        record_role: RECORD_ROLE.POSITION,
+        buy_company_name: code,
+        buy_currency: newRecord.data.buy_currency || 'CNY',
+        linked_buy_record_ids: [],
+        linked_sell_record_ids: [],
+        merged_buy_lots: [],
+        merged_sell_lots: [],
+        merged_total_qty: 0,
+        merged_total_sell_qty: 0,
+        remaining_qty: 0,
+        sold_out: false,
+        sell_status: '',
+      },
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await saveRecord(positionData);
+  }
+
+  // 建立关联
+  if (role === RECORD_ROLE.BUY) {
+    newRecord.data.position_record_id = positionData.id;
+    const linked = Array.isArray(positionData.data.linked_buy_record_ids)
+      ? [...(positionData.data.linked_buy_record_ids as string[])]
+      : [];
+    if (!linked.includes(newRecord.id)) linked.push(newRecord.id);
+    positionData.data.linked_buy_record_ids = linked;
+  } else if (role === RECORD_ROLE.SELL) {
+    newRecord.data.position_record_id = positionData.id;
+    const linked = Array.isArray(positionData.data.linked_sell_record_ids)
+      ? [...(positionData.data.linked_sell_record_ids as string[])]
+      : [];
+    if (!linked.includes(newRecord.id)) linked.push(newRecord.id);
+    positionData.data.linked_sell_record_ids = linked;
+  }
+
+  await saveRecord(positionData);
+  return { position: positionData, buyRecord: role === RECORD_ROLE.BUY ? newRecord : undefined, sellRecord: role === RECORD_ROLE.SELL ? newRecord : undefined };
+}

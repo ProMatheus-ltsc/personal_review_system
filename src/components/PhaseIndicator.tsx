@@ -21,6 +21,8 @@ interface PhaseIndicatorProps {
   onPhaseClick: (phaseIndex: number) => void;
   formData?: Record<string, any>;
   recordCreatedAt?: string;
+  /** 测试模式：跳过冷静期（不再显示时间锁） */
+  skipCooldown?: boolean;
 }
 
 const PhaseIndicator: React.FC<PhaseIndicatorProps> = ({
@@ -29,6 +31,7 @@ const PhaseIndicator: React.FC<PhaseIndicatorProps> = ({
   onPhaseClick,
   formData,
   recordCreatedAt,
+  skipCooldown,
 }) => {
   return (
     <div className="mb-5 px-2">
@@ -41,8 +44,8 @@ const PhaseIndicator: React.FC<PhaseIndicatorProps> = ({
           // Check if this future phase has a time lock (unlockAfterDays)
           let isTimeLocked = false;
           let timeLockLabel = '';
-          if (isFuture && phase.unlockAfterDays && formData) {
-            const lockInfo = getPhaseTimeLockInfo(phase, formData, recordCreatedAt);
+          if (isFuture && phase.unlockAfterDays && formData && !skipCooldown) {
+            const lockInfo = getPhaseTimeLockInfo(phase, formData, recordCreatedAt, { skipCooldown });
             if (lockInfo) {
               isTimeLocked = true;
               if (lockInfo.unlockDate.getFullYear() < 9000) {

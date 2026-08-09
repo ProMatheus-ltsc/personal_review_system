@@ -17,7 +17,27 @@ interface InvestmentTableProps {
 
 export default function InvestmentTable({ records, onSelect }: InvestmentTableProps) {
   const getStatus = (r: FormRecord): { label: string; cls: string } => {
-    // 已复盘：Trade 层优先（merged_reviews 有 lesson 非空），回退到 entries
+    const role = r.data.record_role as string | undefined;
+    // 买入单：买入后 30 天可复盘（buy_review_lesson）
+    if (role === 'buy') {
+      const reviewed = !isFieldEmpty(r.data.buy_review_lesson);
+      return reviewed
+          ? { label: '已复盘', cls: 'bg-green-100 text-green-700' }
+          : { label: '买入单', cls: 'bg-blue-100 text-blue-600' };
+    }
+    // 卖出单：卖出后 30 天可复盘（sell_review_entries）
+    if (role === 'sell') {
+      const entries = r.data.sell_review_entries as Record<string, unknown>[] | undefined;
+      const reviewed = Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson));
+      return reviewed
+          ? { label: '已复盘', cls: 'bg-green-100 text-green-700' }
+          : { label: '卖出单', cls: 'bg-amber-100 text-amber-700' };
+    }
+    // 仓位单：已复盘（position_lesson 或 Trade 层）
+    const positionReviewed = !isFieldEmpty(r.data.position_lesson);
+    if (positionReviewed) {
+      return { label: '已复盘', cls: 'bg-green-100 text-green-700' };
+    }
     const reviews = readReviews(r);
     if (reviews.some((rv) => !isFieldEmpty(rv.lesson))) {
       return { label: '已复盘', cls: 'bg-green-100 text-green-700' };
@@ -25,6 +45,9 @@ export default function InvestmentTable({ records, onSelect }: InvestmentTablePr
     const entries = r.data.sell_review_entries as Record<string, unknown>[] | undefined;
     if (Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson))) {
       return { label: '已复盘', cls: 'bg-green-100 text-green-700' };
+    }
+    if (r.data.sold_out === true) {
+      return { label: '已清仓', cls: 'bg-blue-100 text-blue-600' };
     }
     const sellPrice = r.data.sell_exit_price;
     if (sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '') {

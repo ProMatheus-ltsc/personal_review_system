@@ -37,10 +37,15 @@ export async function getFilteredRecords(
 /**
  * 获取投资检查清单的全部记录（不限 status，投资单据的统计/明细不应依赖
  * 用户是否手动点了"完成"按钮，sold_out 才是平仓的真实标志）
+ * 仅统计新模型单据（record_role = position/buy/sell），旧格式不展示
  */
 export async function getAllInvestmentRecords(range: TimeRange): Promise<FormRecord[]> {
   const records = await getAllRecords('investment_checklist');
-  return filterByTimeRange(records, range);
+  const valid = records.filter((r) => {
+    const role = r.data.record_role as string | undefined;
+    return role === 'position' || role === 'buy' || role === 'sell';
+  });
+  return filterByTimeRange(valid, range);
 }
 
 // ============================================================

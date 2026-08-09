@@ -14,6 +14,7 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { templates } from '@/templates';
 import FormRenderer from '@/components/FormRenderer';
+import InvestmentEntry from '@/components/InvestmentEntry';
 import ExportButtons from '@/components/ExportButtons';
 import { useRecord } from '@/hooks/useDB';
 import type { FormRecord } from '@/types';
@@ -61,6 +62,31 @@ const FormPage: React.FC = () => {
           <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-gray-600">加载中...</span>
         </div>
+      </div>
+    );
+  }
+
+  // 投资检查清单新建模式：先进入股票代码中心入口（选择操作）
+  if (templateId === 'investment_checklist' && !recordId) {
+    return (
+      <div>
+        <header className="bg-white border-b border-gray-200 sticky top-14 md:top-16 z-10 -mx-4 md:-mx-6 px-4 md:px-6">
+          <div className="max-w-3xl mx-auto py-3 flex items-center">
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 transition mr-4"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              返回
+            </button>
+            <span className="text-sm text-gray-400">{template.name}</span>
+          </div>
+        </header>
+        <main className="py-6">
+          <InvestmentEntry />
+        </main>
       </div>
     );
   }

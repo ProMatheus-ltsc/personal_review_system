@@ -272,5 +272,133 @@ export const investmentChecklistTemplate: FormTemplate = {
           hint: '如果用一句话总结这次投资周期，你会说什么？' },
       ],
     },
+    {
+      id: 'buy_review',
+      title: '买入复盘',
+      description: '买入决策 30 天后的反思 — 为什么买？判断是否正确？',
+      fields: [
+        { id: 'buy_review_date', label: '复盘日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
+        { id: 'buy_review_thesis_valid', label: '买入逻辑验证', type: 'radio', priority: 'required', options: [
+            { value: '完全正确', label: '完全正确' }, { value: '部分正确', label: '部分正确' }, { value: '完全错误', label: '完全错误' },
+          ], hint: '诚实面对——逻辑正确但跌了(运气差)，还是逻辑错了但涨了(运气好)？' },
+        { id: 'buy_review_what_was_right', label: '做对了什么？', type: 'textarea', priority: 'required',
+          hint: '买入判断中最正确的一点是什么？' },
+        { id: 'buy_review_what_was_wrong', label: '做错了什么？', type: 'textarea', priority: 'required',
+          hint: '买入时忽略了什么？诚实面对，不美化' },
+        { id: 'buy_review_lesson', label: '核心教训', type: 'textarea', priority: 'required',
+          hint: '提炼一条可复用的买入经验', autocomplete: true },
+        { id: 'buy_review_would_repeat', label: '同样的机会再来，你还会买吗？', type: 'radio', priority: 'recommended', options: [
+            { value: '一定会', label: '一定会' }, { value: '会，但会调整', label: '会，但会调整' }, { value: '不会', label: '不会' },
+          ] },
+        { id: 'buy_review_adjustment', label: '下次如何调整？', type: 'textarea', priority: 'optional', condition: { dependsOn: 'buy_review_would_repeat', showWhen: '会，但会调整' } },
+      ],
+    },
   ],
 };
+
+// ============================================================
+// 三角色动态模板（Position / Buy / Sell）
+// 仓位单以股票代码为准；买入/卖出为独立复盘单
+// ============================================================
+
+export type InvestmentRecordRole = 'position' | 'buy' | 'sell';
+
+/**
+ * 按单据角色构建动态模板：
+ * - position（仓位单）：持有中复盘（表格形式）+ 清仓 30 天后投资周期复盘
+ * - buy（买入单）：完整买入前检查 + 30 天后买入复盘
+ * - sell（卖出单）：卖出决策 + 30 天后卖出复盘
+ * 仅筛选 sections 并重建 phases（索引重映射），其余模板元数据复用。
+ */
+export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
+  const S = investmentChecklistTemplate.sections;
+  // 索引映射：0 买入前 / 1 持有中 / 2 卖出时 / 3 卖出复盘 / 4 仓位复盘 / 5 买入复盘
+  const byId = (id: string) => S.findIndex((s) => s.id === id);
+
+  if (role === 'buy') {
+    const iBuy = byId('before_buying');
+    const iReview = byId('buy_review');
+    return {
+      ...investmentChecklistTemplate,
+      name: '买入复盘单',
+      description: '记录一次买入决策，30 天后复盘买入是否正确',
+      phases: [
+        {
+          id: 'buying',
+          label: '买入阶段',
+          icon: '🎯',
+          sectionIndices: [0],
+          completionFields: ['buy_company_name', 'buy_thesis', 'buy_understand_business'],
+        },
+        {
+          id: 'buy_review',
+          label: '买入复盘',
+          icon: '🔍',
+          sectionIndices: [1],
+          completionFields: ['buy_review_thesis_valid', 'buy_review_lesson'],
+          unlockAfterDays: 30,
+          unlockAfterField: 'buy_date',
+        },
+      ],
+      sections: [S[iBuy], S[iReview]],
+    };
+  }
+
+  if (role === 'sell') {
+    const iSell = byId('when_selling');
+    const iReview = byId('sell_review');
+    return {
+      ...investmentChecklistTemplate,
+      name: '卖出复盘单',
+      description: '记录一次卖出决策，30 天后复盘卖点是否合理',
+      phases: [
+        {
+          id: 'selling',
+          label: '卖出阶段',
+          icon: '💰',
+          sectionIndices: [0],
+          completionFields: ['sell_exit_price', 'sell_reason'],
+          completesRecord: true,
+        },
+        {
+          id: 'sell_review',
+          label: '卖出复盘',
+          icon: '🔍',
+          sectionIndices: [1],
+          completionFields: ['sell_thesis_valid', 'sell_lesson'],
+          unlockAfterDays: 30,
+          unlockAfterField: 'sell_date',
+        },
+      ],
+      sections: [S[iSell], S[iReview]],
+    };
+  }
+
+  // position（仓位单）：持有中复盘 + 清仓后投资周期复盘
+  const iHolding = byId('while_holding');
+  const iPositionReview = byId('position_review');
+  return {
+    ...investmentChecklistTemplate,
+    name: '仓位单',
+    description: '以股票代码为准的投资周期看板 — 持有中复盘 + 清仓后完整复盘',
+    phases: [
+      {
+        id: 'holding',
+        label: '持有中',
+        icon: '⏳',
+        sectionIndices: [0],
+        completionFields: [],
+      },
+      {
+        id: 'position_review',
+        label: '投资周期复盘',
+        icon: '🔍',
+        sectionIndices: [1],
+        completionFields: ['position_lesson'],
+        unlockAfterDays: 30,
+        unlockAfterField: 'sell_date',
+      },
+    ],
+    sections: [S[iHolding], S[iPositionReview]],
+  };
+}
