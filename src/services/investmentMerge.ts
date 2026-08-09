@@ -83,10 +83,10 @@ function isSellFilled(r: FormRecord): boolean {
 /** 计算某条投资记录当前所处的阶段索引 */
 function phaseOf(r: FormRecord): number {
   return getCurrentPhaseIndex(
-    phases,
-    r.data as Record<string, any>,
-    investmentChecklistTemplate.sections,
-    r.createdAt
+      phases,
+      r.data as Record<string, any>,
+      investmentChecklistTemplate.sections,
+      r.createdAt
   );
 }
 
@@ -170,10 +170,10 @@ export async function mergeSameCodeBuys(current: FormRecord): Promise<MergeResul
 
   const all = await getAllRecords('investment_checklist');
   const absorbees = all.filter(
-    (r) =>
-      r.id !== current.id &&
-      String(r.data.buy_company_name ?? '').trim() === code &&
-      isOpenPosition(r)
+      (r) =>
+          r.id !== current.id &&
+          String(r.data.buy_company_name ?? '').trim() === code &&
+          isOpenPosition(r)
   );
   if (absorbees.length === 0) return null;
 
@@ -203,6 +203,8 @@ export async function mergeSameCodeBuys(current: FormRecord): Promise<MergeResul
     SELL_TOP_LEVEL_FIELDS.forEach((f) => {
       data[f] = '';
     });
+    // 恢复卖出日期为当天：下次进入卖出阶段时默认显示今天
+    data.sell_date = new Date().toISOString().slice(0, 10);
     data.sold_out = false;
     data.sell_status = 'partial';
     data.remaining_qty = totalQty - totalSellQty;
@@ -289,10 +291,10 @@ export async function applySellBatch(current: FormRecord): Promise<MergeResult |
   const totalSell = lots.reduce((s, l) => s + (toNum(l.qty) ?? 0), 0);
   const sellWeighted = weightedAvg(lots.map((l) => ({ price: toNum(l.price) ?? 0, qty: toNum(l.qty) ?? 0 })));
   const lastSellDate = lots
-    .map((l) => l.date)
-    .filter((d): d is string => !!d)
-    .sort()
-    .pop();
+      .map((l) => l.date)
+      .filter((d): d is string => !!d)
+      .sort()
+      .pop();
   // 未知总买入数量的历史记录：无法判断部分/全部，首次卖出即视为清仓
   const remaining = knownTotalBuy ? totalBuy - totalSell : 0;
   const soldOut = knownTotalBuy ? remaining === 0 : true;
@@ -318,6 +320,8 @@ export async function applySellBatch(current: FormRecord): Promise<MergeResult |
     SELL_TOP_LEVEL_FIELDS.forEach((f) => {
       data[f] = '';
     });
+    // 恢复卖出日期为当天：下次进入卖出阶段时默认显示今天，免去用户重复填写
+    data.sell_date = new Date().toISOString().slice(0, 10);
     data.sell_status = 'partial';
     data.remaining_qty = remaining;
   }
@@ -352,10 +356,10 @@ export async function undoLastSellBatch(current: FormRecord): Promise<MergeResul
   const totalSell = newLots.reduce((s, l) => s + (toNum(l.qty) ?? 0), 0);
   const sellWeighted = weightedAvg(newLots.map((l) => ({ price: toNum(l.price) ?? 0, qty: toNum(l.qty) ?? 0 })));
   const lastSellDate = newLots
-    .map((l) => l.date)
-    .filter((d): d is string => !!d)
-    .sort()
-    .pop();
+      .map((l) => l.date)
+      .filter((d): d is string => !!d)
+      .sort()
+      .pop();
   const totalBuy = totalBuyQtyOf(current);
   const knownTotalBuy = totalBuy > 0;
   const remaining = knownTotalBuy ? totalBuy - totalSell : 0;
@@ -376,6 +380,8 @@ export async function undoLastSellBatch(current: FormRecord): Promise<MergeResul
     SELL_TOP_LEVEL_FIELDS.forEach((f) => {
       data[f] = '';
     });
+    // 恢复卖出日期为当天：下次进入卖出阶段时默认显示今天
+    data.sell_date = new Date().toISOString().slice(0, 10);
     data.sell_status = '';
     data.remaining_qty = knownTotalBuy ? totalBuy : 0;
   } else if (soldOut) {
@@ -388,6 +394,8 @@ export async function undoLastSellBatch(current: FormRecord): Promise<MergeResul
     SELL_TOP_LEVEL_FIELDS.forEach((f) => {
       data[f] = '';
     });
+    // 恢复卖出日期为当天：下次进入卖出阶段时默认显示今天
+    data.sell_date = new Date().toISOString().slice(0, 10);
     data.sell_status = 'partial';
     data.remaining_qty = remaining;
   }
