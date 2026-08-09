@@ -217,12 +217,6 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">个人复盘系统</h1>
-        <p className="text-gray-500 mt-1">
-          选择模板开始新的复盘，或查看历史记录
-        </p>
-      </div>
 
       <BackupReminder
         isFirstVisit={isFirstVisit}
