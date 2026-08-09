@@ -303,17 +303,31 @@ export const investmentChecklistTemplate: FormTemplate = {
 
 export type InvestmentRecordRole = 'position' | 'buy' | 'sell';
 
+/** 各场景复盘冷静期配置键（settings store，值 = 天数） */
+export const COOLDOWN_SETTINGS = {
+  BUY: 'cooldown_days_buy',
+  SELL: 'cooldown_days_sell',
+  POSITION: 'cooldown_days_position',
+} as const;
+
+/** 默认冷静期（天） */
+export const DEFAULT_COOLDOWN_DAYS = 30;
+
 /**
  * 按单据角色构建动态模板：
- * - position（仓位单）：持有中复盘（表格形式）+ 清仓 30 天后投资周期复盘
- * - buy（买入单）：完整买入前检查 + 30 天后买入复盘
- * - sell（卖出单）：卖出决策 + 30 天后卖出复盘
+ * - position（仓位单）：持有中复盘（表格形式）+ 清仓 {cooldown} 天后投资周期复盘
+ * - buy（买入单）：完整买入前检查 + {cooldown} 天后买入复盘
+ * - sell（卖出单）：卖出决策 + {cooldown} 天后卖出复盘
  * 仅筛选 sections 并重建 phases（索引重映射），其余模板元数据复用。
+ * @param role - 单据角色
+ * @param cooldownDays - 对应场景的复盘冷静期天数（默认 30，可在页面配置）
  */
-export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
+export function buildRoleTemplate(role: InvestmentRecordRole, cooldownDays = DEFAULT_COOLDOWN_DAYS): FormTemplate {
   const S = investmentChecklistTemplate.sections;
   // 索引映射：0 买入前 / 1 持有中 / 2 卖出时 / 3 卖出复盘 / 4 仓位复盘 / 5 买入复盘
   const byId = (id: string) => S.findIndex((s) => s.id === id);
+  // 兼容负数/非法值（防御：设置页保证 >= 0）
+  const days = Number.isFinite(cooldownDays) && cooldownDays >= 0 ? cooldownDays : DEFAULT_COOLDOWN_DAYS;
 
   if (role === 'buy') {
     const iBuy = byId('before_buying');
@@ -321,7 +335,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
     return {
       ...investmentChecklistTemplate,
       name: '投资检查清单',
-      description: '记录一次买入决策，30 天后复盘买入是否正确',
+      description: `记录一次买入决策，${days} 天后复盘买入是否正确`,
       phases: [
         {
           id: 'buying',
@@ -336,7 +350,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
           icon: '🔍',
           sectionIndices: [1],
           completionFields: ['buy_review_thesis_valid', 'buy_review_lesson'],
-          unlockAfterDays: 30,
+          unlockAfterDays: days,
           unlockAfterField: 'buy_date',
         },
       ],
@@ -350,7 +364,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
     return {
       ...investmentChecklistTemplate,
       name: '投资检查清单',
-      description: '记录一次卖出决策，30 天后复盘卖点是否合理',
+      description: `记录一次卖出决策，${days} 天后复盘卖点是否合理`,
       phases: [
         {
           id: 'selling',
@@ -366,7 +380,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
           icon: '🔍',
           sectionIndices: [1],
           completionFields: ['sell_thesis_valid', 'sell_lesson'],
-          unlockAfterDays: 30,
+          unlockAfterDays: days,
           unlockAfterField: 'sell_date',
         },
       ],
@@ -395,7 +409,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
         icon: '🔍',
         sectionIndices: [1],
         completionFields: ['position_lesson'],
-        unlockAfterDays: 30,
+        unlockAfterDays: days,
         unlockAfterField: 'sell_date',
       },
     ],

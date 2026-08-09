@@ -7,6 +7,10 @@
  * - 登录页提供「创建新账户」入口（可创建多个账户，数据各自隔离）
  * - 已认证 → 自动跳转到首页
  *
+ * 忘记密码（按账户重置）：
+ * - 输入要重置的账户名 → 仅删除该账户登录凭据（不影响其他账户）
+ * - 业务数据保留在 review-app-{账户名} 业务库中，重新注册同名账户即可恢复
+ *
  * 安全措施：
  * - 账户名唯一（账户名即账户 id）
  * - 密码长度限制 4-20 位
@@ -16,11 +20,12 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import * as authService from '@/services/auth';
 import PasswordInput from '@/components/PasswordInput';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { isFirstTime, loading, login, register, isAuthenticated, resetPassword } = useAuth();
+  const { isFirstTime, loading, login, register, isAuthenticated } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPasswordValue] = useState('');
@@ -214,13 +219,28 @@ export default function LoginPage() {
               type="button"
               disabled={resetting}
               onClick={async () => {
+                // 忘记密码：按账户名重置单个账户（业务数据保留，重新注册同名账户即可恢复）
+                const usernameInput = window.prompt(
+                  '请输入要重置的账户名（仅重置该账户的登录密码，不影响其他账户）：'
+                );
+                if (usernameInput === null) return; // 取消
+                const target = usernameInput.trim();
+                if (!target) {
+                  window.alert('账户名不能为空');
+                  return;
+                }
                 const confirmed = window.confirm(
-                  '将清除全部账户（各账户数据仍保留在本地）。\n确认后需重新创建账户。\n\n确定要重置吗？'
+                  `将重置账户「${target}」的登录凭据。\n\n该账户的业务数据仍保留在本地，之后用同名账户重新注册即可恢复。\n\n确定要重置吗？`
                 );
                 if (!confirmed) return;
                 setResetting(true);
-                await resetPassword();
+                const result = await authService.resetAccount(target);
                 setResetting(false);
+                window.alert(
+                    result.success
+                        ? `账户「${target}」已重置。\n请用同名账户重新注册（设置新密码）即可恢复该账户的数据。`
+                        : `重置失败：${result.error || '未知错误'}`
+                );
               }}
               className="text-gray-400 hover:text-indigo-600 transition-colors"
             >

@@ -23,6 +23,8 @@
 import {
   getAccount,
   createAccount,
+  updateAccountPassword,
+  deleteAccount,
   listAccounts,
   deleteAllAccounts,
   setCurrentAccountId,
@@ -174,6 +176,51 @@ export async function login(username: string, password: string): Promise<AuthRes
 }
 
 /**
+ * 修改账户密码（已登录改密 / 强制重置测试账户密码）
+ *
+ * @param username - 账户名
+ * @param newPassword - 新密码（4-20 位）
+ * @returns 修改结果
+ */
+export async function setAccountPassword(username: string, newPassword: string): Promise<AuthResult> {
+  const id = username.trim();
+  if (!id) return { success: false, error: '请输入账户名' };
+  if (newPassword.length < 4 || newPassword.length > 20) {
+    return { success: false, error: '密码长度需在 4-20 位之间' };
+  }
+  const existing = await getAccount(id);
+  if (!existing) return { success: false, error: '账户不存在' };
+  const hashedValue = await hashPassword(newPassword);
+  await updateAccountPassword(id, hashedValue);
+  return { success: true };
+}
+
+/**
+ * 重置单个账户（忘记密码时使用）
+ *
+ * 仅删除元库中该账户的登录凭据（业务数据保留在 review-app-{账户名} 业务库中）：
+ * - 重新注册同名账户即可恢复该账户的全部数据（账户 id = 用户名，业务库按用户名命名）
+ * - 不影响其他账户
+ *
+ * @param username - 要重置的账户名
+ * @returns 重置结果
+ */
+export async function resetAccount(username: string): Promise<AuthResult> {
+  const id = username.trim();
+  if (!id) return { success: false, error: '请输入要重置的账户名' };
+  const existing = await getAccount(id);
+  if (!existing) return { success: false, error: '账户不存在，请核对账户名' };
+  await deleteAccount(id);
+  // 若重置的是当前会话账户，清除会话并回退上下文
+  if (sessionStorage.getItem(SESSION_ACCOUNT_KEY) === id) {
+    sessionStorage.removeItem(SESSION_ACCOUNT_KEY);
+    sessionStorage.removeItem(SESSION_USERNAME_KEY);
+    setCurrentAccountId(null);
+  }
+  return { success: true };
+}
+
+/**
  * 检查是否存在已注册账户（区分「首次使用」和「已有账户」）
  *
  * @returns 已注册账户返回 true，否则 false
@@ -221,10 +268,12 @@ export function logout(): void {
 }
 
 /**
- * 重置全部账户（忘记密码时使用）
+ * 重置全部账户（极端情况使用）
  *
  * 清空元库 accounts store，回退到「首次使用」状态需重新创建账户。
- * 注意：各账户的业务数据仍保留在其独立业务库中（不影响）。
+ * 各账户的业务数据仍保留在其独立业务库中——重新注册同名账户即可恢复对应数据。
+ *
+ * 注意：多账户场景下推荐使用 resetAccount(账户名) 按账户重置，避免影响其他账户。
  */
 export async function resetPassword(): Promise<void> {
   await deleteAllAccounts();

@@ -1156,66 +1156,108 @@ export function syncPositionFromLinked(
 }
 
 /**
- * 创建买入单（或卖出单）并建立与仓位单的关联：
+ * 创建买入单（或卖出单）并建立与已有仓位单的关联：
  * - 有仓位单：关联 position_record_id，并把单据 id 追加进仓位单 linked_*_record_ids
- * - 无仓位单：同时创建仓位单（role=position），建立双向关联
+ * - 无仓位单：**不创建**（仓位单改为「买入单完成后」由 ensurePositionForBuyRecord 创建）
  * 仓位单汇总在后续 syncPositionFromLinked 时统一刷新。
  */
 export async function linkNewRecord(
   newRecord: FormRecord,
   position: FormRecord | undefined
-): Promise<{ buyRecord?: FormRecord; sellRecord?: FormRecord; position: FormRecord }> {
+): Promise<{ buyRecord?: FormRecord; sellRecord?: FormRecord; position?: FormRecord }> {
   const role = getRecordRole(newRecord);
-  const code = normalizeCode(newRecord.data.buy_company_name);
 
-  let positionData = position;
-  // 无仓位单：创建仓位单骨架（仅记录代码与首笔关联）
-  if (!positionData) {
-    const now = new Date().toISOString();
-    positionData = {
-      id: uuidv4(),
-      templateId: 'investment_checklist',
-      title: `投资检查清单 - ${code} 持有仓位`,
-      data: {
-        record_role: RECORD_ROLE.POSITION,
-        buy_company_name: code,
-        buy_currency: newRecord.data.buy_currency || 'CNY',
-        linked_buy_record_ids: [],
-        linked_sell_record_ids: [],
-        merged_buy_lots: [],
-        merged_sell_lots: [],
-        merged_total_qty: 0,
-        merged_total_sell_qty: 0,
-        remaining_qty: 0,
-        sold_out: false,
-        sell_status: '',
-      },
-      status: 'draft',
-      createdAt: now,
-      updatedAt: now,
-    };
-    await saveRecord(positionData);
+  // 无仓位单：仅关联置空（仓位单由买入单完成时创建）
+  if (!position) {
+    await saveRecord(newRecord);
+    return { buyRecord: role === RECORD_ROLE.BUY ? newRecord : undefined, sellRecord: role === RECORD_ROLE.SELL ? newRecord : undefined, position: undefined };
   }
 
   // 建立关联
   if (role === RECORD_ROLE.BUY) {
-    newRecord.data.position_record_id = positionData.id;
-    const linked = Array.isArray(positionData.data.linked_buy_record_ids)
-      ? [...(positionData.data.linked_buy_record_ids as string[])]
+    newRecord.data.position_record_id = position.id;
+    const linked = Array.isArray(position.data.linked_buy_record_ids)
+      ? [...(position.data.linked_buy_record_ids as string[])]
       : [];
     if (!linked.includes(newRecord.id)) linked.push(newRecord.id);
-    positionData.data.linked_buy_record_ids = linked;
+    position.data.linked_buy_record_ids = linked;
   } else if (role === RECORD_ROLE.SELL) {
-    newRecord.data.position_record_id = positionData.id;
-    const linked = Array.isArray(positionData.data.linked_sell_record_ids)
-      ? [...(positionData.data.linked_sell_record_ids as string[])]
+    newRecord.data.position_record_id = position.id;
+    const linked = Array.isArray(position.data.linked_sell_record_ids)
+      ? [...(position.data.linked_sell_record_ids as string[])]
       : [];
     if (!linked.includes(newRecord.id)) linked.push(newRecord.id);
-    positionData.data.linked_sell_record_ids = linked;
+    position.data.linked_sell_record_ids = linked;
   }
 
   // 关键：必须保存买入/卖出单本身（此前缺失导致跳转后记录不存在、代码字段为空）
   await saveRecord(newRecord);
-  await saveRecord(positionData);
-  return { position: positionData, buyRecord: role === RECORD_ROLE.BUY ? newRecord : undefined, sellRecord: role === RECORD_ROLE.SELL ? newRecord : undefined };
+  await saveRecord(position);
+  return { position, buyRecord: role === RECORD_ROLE.BUY ? newRecord : undefined, sellRecord: role === RECORD_ROLE.SELL ? newRecord : undefined };
+}
+
+/**
+ * 买入单完成后同步创建仓位单（幂等）：
+ * - 已存在同代码仓位单 → 复用并建立关联
+ * - 不存在 → 创建仓位单骨架并建立双向关联
+ * 返回仓位单（供调用方保存后的汇总刷新）。
+ */
+export async function ensurePositionForBuyRecord(
+  buyRecord: FormRecord,
+  allRecords: FormRecord[]
+): Promise<FormRecord | undefined> {
+  const role = getRecordRole(buyRecord);
+  if (role !== RECORD_ROLE.BUY) return undefined;
+  const code = normalizeCode(buyRecord.data.buy_company_name);
+  if (!code) return undefined;
+
+  // 已有关联仓位单 → 直接返回
+  const linkedId = buyRecord.data.position_record_id as string | undefined;
+  if (linkedId) {
+    const existing = allRecords.find((r) => r.id === linkedId);
+    if (existing) return existing;
+  }
+
+  // 查同代码仓位单（可能此前已通过其他买入单创建）
+  const position = findPositionByCode(allRecords, code);
+  if (position) {
+    buyRecord.data.position_record_id = position.id;
+    const linked = Array.isArray(position.data.linked_buy_record_ids)
+      ? [...(position.data.linked_buy_record_ids as string[])]
+      : [];
+    if (!linked.includes(buyRecord.id)) linked.push(buyRecord.id);
+    position.data.linked_buy_record_ids = linked;
+    await saveRecord(buyRecord);
+    await saveRecord(position);
+    return position;
+  }
+
+  // 无仓位单 → 创建骨架
+  const now = new Date().toISOString();
+  const newPosition: FormRecord = {
+    id: uuidv4(),
+    templateId: 'investment_checklist',
+    title: `投资检查清单 - ${code} 持有仓位`,
+    data: {
+      record_role: RECORD_ROLE.POSITION,
+      buy_company_name: code,
+      buy_currency: buyRecord.data.buy_currency || 'CNY',
+      linked_buy_record_ids: [buyRecord.id],
+      linked_sell_record_ids: [],
+      merged_buy_lots: [],
+      merged_sell_lots: [],
+      merged_total_qty: 0,
+      merged_total_sell_qty: 0,
+      remaining_qty: 0,
+      sold_out: false,
+      sell_status: '',
+    },
+    status: 'draft',
+    createdAt: now,
+    updatedAt: now,
+  };
+  buyRecord.data.position_record_id = newPosition.id;
+  await saveRecord(buyRecord);
+  await saveRecord(newPosition);
+  return newPosition;
 }

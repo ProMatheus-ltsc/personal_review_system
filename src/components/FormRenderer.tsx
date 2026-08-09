@@ -29,7 +29,7 @@ import Toast from './Toast';
 import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
 import InvestmentMergePanel, { type MergeLot, type MergedSnapshot } from './InvestmentMergePanel';
-import { buildRoleTemplate } from '@/templates/investmentChecklist';
+import { buildRoleTemplate, COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
 import {
@@ -42,6 +42,7 @@ import {
   isTradeReviewedInEntries,
   syncPositionFromLinked,
   getLinkedRecords,
+  ensurePositionForBuyRecord,
   PHASE_REVIEW,
   type InvestmentTrade,
 } from '@/services/investmentMerge';
@@ -104,18 +105,40 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   /**
    * 投资检查清单按单据角色（record_role）动态构建模板：
    * - position：仓位单（持有中复盘 + 清仓后投资周期复盘）
-   * - buy：买入复盘单（买入前检查 + 30 天买入复盘）
-   * - sell：卖出复盘单（卖出决策 + 30 天卖出复盘）
+   * - buy：买入复盘单（买入前检查 + 冷静期后买入复盘）
+   * - sell：卖出复盘单（卖出决策 + 冷静期后卖出复盘）
    * 其余模板原样使用。
+   * 复盘冷静期天数从设置读取（cooldown_days_buy/sell/position，默认 30，可在入口页配置）。
    */
+  // 各场景复盘冷静期天数（异步读取设置后生效）
+  const [cooldownDays, setCooldownDays] = useState({ buy: DEFAULT_COOLDOWN_DAYS, sell: DEFAULT_COOLDOWN_DAYS, position: DEFAULT_COOLDOWN_DAYS });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [buy, sell, pos] = await Promise.all([
+        getSetting(COOLDOWN_SETTINGS.BUY),
+        getSetting(COOLDOWN_SETTINGS.SELL),
+        getSetting(COOLDOWN_SETTINGS.POSITION),
+      ]);
+      if (cancelled) return;
+      const toNum = (v: unknown, fallback: number): number => {
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
+      };
+      setCooldownDays({ buy: toNum(buy, DEFAULT_COOLDOWN_DAYS), sell: toNum(sell, DEFAULT_COOLDOWN_DAYS), position: toNum(pos, DEFAULT_COOLDOWN_DAYS) });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const template = useMemo(() => {
     if (rawTemplate.id !== 'investment_checklist') return rawTemplate;
     const role = initialData?.record_role as string | undefined;
-    if (role === 'position' || role === 'buy' || role === 'sell') {
-      return buildRoleTemplate(role);
-    }
+    if (role === 'buy') return buildRoleTemplate('buy', cooldownDays.buy);
+    if (role === 'sell') return buildRoleTemplate('sell', cooldownDays.sell);
+    if (role === 'position') return buildRoleTemplate('position', cooldownDays.position);
     return rawTemplate;
-  }, [rawTemplate, initialData?.record_role]);
+  }, [rawTemplate, initialData?.record_role, cooldownDays]);
 
   // 投资检查清单单据角色（用于保存联动与汇总展示）
   const recordRole = useMemo(() => {
@@ -515,21 +538,38 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             const code = String(record.data.buy_company_name ?? '').trim();
             if (code) {
               if (recordRole === 'buy' || recordRole === 'sell') {
-                // 新模型：联动更新关联仓位单（merged_buy_lots / merged_sell_lots / 剩余持仓 / 清仓状态）
+                // 新模型：联动仓位单
+                // 1) 买入单：完成买入阶段（代码/逻辑/检查齐备）且尚无仓位单 → 同步创建仓位单
+                // 2) 对已有仓位单：刷新汇总（merged_buy_lots / merged_sell_lots / 剩余持仓 / 清仓状态）
+                let position: FormRecord | undefined;
                 const positionId = record.data.position_record_id as string | undefined;
                 if (positionId) {
-                  const position = await getRecord(positionId);
-                  if (position) {
-                    const allRecords = await getAllRecords('investment_checklist');
-                    const { buyRecords, sellRecords } = getLinkedRecords(position, allRecords);
-                    const updated = syncPositionFromLinked(position, buyRecords, sellRecords);
-                    await save(updated);
-                    if (recordRole === 'sell' && updated.data.sold_out === true) {
-                      showToast(
-                          `仓位 ${code} 已清仓，30 天后可进行投资周期复盘`,
-                          'success'
-                      );
+                  position = await getRecord(positionId);
+                }
+                const allRecords = await getAllRecords('investment_checklist');
+                if (recordRole === 'buy' && !position) {
+                  // 买入单完成 → 创建/关联仓位单（幂等）
+                  const buyingDone =
+                      !isFieldEmpty(record.data.buy_company_name) &&
+                      !isFieldEmpty(record.data.buy_thesis) &&
+                      record.data.buy_understand_business === true;
+                  if (buyingDone) {
+                    position = await ensurePositionForBuyRecord(record, allRecords);
+                    if (position) {
+                      showToast(`买入单已完成，仓位单已同步创建（${code}）`, 'success');
                     }
+                  }
+                }
+                if (position) {
+                  const refreshed = await getAllRecords('investment_checklist');
+                  const { buyRecords, sellRecords } = getLinkedRecords(position, refreshed);
+                  const updated = syncPositionFromLinked(position, buyRecords, sellRecords);
+                  await save(updated);
+                  if (recordRole === 'sell' && updated.data.sold_out === true) {
+                    showToast(
+                        `仓位 ${code} 已清仓，${cooldownDays.position} 天后可进行投资周期复盘`,
+                        'success'
+                    );
                   }
                 }
               } else if (recordRole === 'position') {
@@ -593,7 +633,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           return null;
         }
       },
-      [buildRecord, save, recordStatus, getValues, setValue, template, syncMergedData, showToast]
+      [buildRecord, save, recordStatus, getValues, setValue, template, syncMergedData, showToast, cooldownDays]
   );
 
   // Auto-save every 30 seconds (skip fully read-only completed records)
@@ -644,7 +684,21 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const handleTabChange = useCallback(
       (index: number) => {
         // Prevent navigating to a locked section
-        if (isSectionLocked(index)) return;
+        if (isSectionLocked(index)) {
+          // 投资清单：锁定复盘 tab 点击时提示剩余解锁天数（锁页面体验）
+          if (template.id === 'investment_checklist' && phases) {
+            const sectionPhaseIdx = getSectionPhaseIndex(phases, index);
+            const phase = phases[sectionPhaseIdx];
+            if (phase?.unlockAfterDays) {
+              const lockInfo = getPhaseTimeLockInfo(phase, getValues(), initialData ? (initialData._createdAt as string) : undefined, { skipCooldown });
+              if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
+                showToast(`「${template.sections[index].title}」将在 ${lockInfo.daysRemaining} 天后解锁（冷静期）`, 'info');
+                return;
+              }
+            }
+          }
+          return;
+        }
         // 回看已完成的只读阶段：允许直接进入，首次时 Toast 提示一次
         if (phases && isSectionReadOnly(index) && !isSectionReadOnly(activeTab) && !readonlyToastShown) {
           setReadonlyToastShown(true);
@@ -847,6 +901,30 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     validationErrors.forEach((err) => set.add(err.sectionIndex));
     return set;
   }, [validationErrors]);
+
+  // 买入单：买入阶段完成（代码/逻辑/检查齐备）且尚无仓位单 → 自动同步创建仓位单
+  // 兜底触发（performSave 中也有创建逻辑，这里覆盖「字段填齐但未手动保存/切 tab」的场景）
+  const buyDoneWatch = useWatch({
+    control,
+    name: ['buy_company_name', 'buy_thesis', 'buy_understand_business'],
+  });
+  useEffect(() => {
+    if (template.id !== 'investment_checklist' || recordRole !== 'buy') return;
+    const [name, thesis, understand] = buyDoneWatch as [unknown, unknown, unknown];
+    const done = !isFieldEmpty(name) && !isFieldEmpty(thesis) && understand === true;
+    if (!done) return;
+    if (getValues('position_record_id')) return; // 已关联仓位单
+    const timer = setTimeout(async () => {
+      const record = buildRecord('draft');
+      const allRecords = await getAllRecords('investment_checklist');
+      const pos = await ensurePositionForBuyRecord(record, allRecords);
+      if (pos) {
+        setValue('position_record_id', pos.id, { shouldDirty: false });
+        showToast('买入单已完成，仓位单已同步创建', 'success');
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [buyDoneWatch, recordRole, template.id, buildRecord, getValues, setValue, showToast]);
 
   /**
    * 渲染单个字段：合并 RHF 校验错误与自定义验证错误，处理条件字段/计算字段/
@@ -1078,16 +1156,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             {template.sections.map((section, index) => {
               // 投资清单：投资周期复盘 tab 仅在清仓后显示
               if (template.id === 'investment_checklist' && section.id === 'position_review' && !soldOutWatch) {
-                return null;
-              }
-              // 买入单/卖出单：复盘 tab（buy_review/sell_review）在未解锁（30 天未到）时隐藏，
-              // 避免出现「多余加锁页面」；30 天后自动出现
-              if (
-                template.id === 'investment_checklist' &&
-                (recordRole === 'buy' || recordRole === 'sell') &&
-                (section.id === 'buy_review' || section.id === 'sell_review') &&
-                isSectionLocked(index)
-              ) {
                 return null;
               }
               const hasErrors = sectionsWithErrors.has(index);

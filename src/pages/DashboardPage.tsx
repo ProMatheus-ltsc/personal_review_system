@@ -20,6 +20,7 @@ import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
 import { isFieldEmpty } from '@/utils/formValidation';
 import { findPendingReviewTrades, ensureTradesInitialized } from '@/services/investmentMerge';
+import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
 import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, PositionOverview, type ReviewItem, type PositionItem } from '@/components/dashboard';
 
 /**
@@ -50,9 +51,23 @@ export default function DashboardPage() {
   const [backupCheckDone, setBackupCheckDone] = useState(false);
   // 测试模式：复盘提醒立即生效（冷静期 0 天）
   const [testMode, setTestMode] = useState(false);
+  // 各场景复盘冷静期天数（从设置读取，默认 30）
+  const [cooldownDays, setCooldownDays] = useState({ buy: DEFAULT_COOLDOWN_DAYS, sell: DEFAULT_COOLDOWN_DAYS, position: DEFAULT_COOLDOWN_DAYS });
 
   useEffect(() => {
     getSetting('test_mode').then((v) => setTestMode(v === 'true'));
+    (async () => {
+      const [buy, sell, pos] = await Promise.all([
+        getSetting(COOLDOWN_SETTINGS.BUY),
+        getSetting(COOLDOWN_SETTINGS.SELL),
+        getSetting(COOLDOWN_SETTINGS.POSITION),
+      ]);
+      const toNum = (v: unknown, fallback: number): number => {
+        const n = Number(v);
+        return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
+      };
+      setCooldownDays({ buy: toNum(buy, DEFAULT_COOLDOWN_DAYS), sell: toNum(sell, DEFAULT_COOLDOWN_DAYS), position: toNum(pos, DEFAULT_COOLDOWN_DAYS) });
+    })();
   }, []);
 
   useEffect(() => {
@@ -168,10 +183,15 @@ export default function DashboardPage() {
       .filter((p) => p.remainingQty > 0);
   }, [records]);
 
-  // 复盘提醒：投资检查清单按单据角色独立提醒（买入单/卖出单/仓位单各 +30 天），决策日志按完成时间
+  // 复盘提醒：投资检查清单按单据角色独立提醒（各场景冷静期可配置），决策日志按完成时间
   const { readyForReview, pendingReview } = useMemo(() => {
-    // 测试模式：冷静期 0 天（所有待复盘立即 ready）
-    const COOLDOWN_DAYS = testMode ? 0 : 30;
+    // 测试模式：冷静期 0 天（所有待复盘立即 ready）；否则按角色配置天数
+    const cooldownFor = (role: string | undefined): number => {
+      if (testMode) return 0;
+      if (role === 'buy') return cooldownDays.buy;
+      if (role === 'sell') return cooldownDays.sell;
+      return cooldownDays.position; // position / 旧模型
+    };
     const ready: ReviewItem[] = [];
     const pending: ReviewItem[] = [];
 
@@ -183,6 +203,7 @@ export default function DashboardPage() {
           const parsed = new Date(dateStr);
           if (isNaN(parsed.getTime())) return;
           const daysSince = Math.floor((Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24));
+          const cooldown = cooldownFor(role);
           const item: ReviewItem = {
             id: key,
             templateId: 'investment_checklist',
@@ -190,7 +211,7 @@ export default function DashboardPage() {
             dateLabel,
             link: `/form/investment_checklist/${record.id}`,
           };
-          if (daysSince >= COOLDOWN_DAYS) ready.push(item);
+          if (daysSince >= cooldown) ready.push(item);
           else pending.push(item);
         };
 
@@ -268,13 +289,13 @@ export default function DashboardPage() {
           dateLabel: `完成于 ${String(completedAt)}`,
           link: `/form/decision_log/${record.id}`,
         };
-        if (daysSince >= COOLDOWN_DAYS) ready.push(item);
+        if (daysSince >= 30) ready.push(item); // 决策日志复盘冷静期固定 30 天
         else pending.push(item);
       }
     });
 
     return { readyForReview: ready, pendingReview: pending };
-  }, [records, testMode]);
+  }, [records, testMode, cooldownDays]);
 
   return (
     <div>

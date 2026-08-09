@@ -84,6 +84,20 @@ export async function getAccount(id: string): Promise<AccountRecord | undefined>
   return db.get('accounts', id);
 }
 
+/** 更新账户密码哈希（改密 / 强制重置密码） */
+export async function updateAccountPassword(id: string, passwordHash: string): Promise<void> {
+  const db = await initMetaDB();
+  const existing = await db.get('accounts', id);
+  if (!existing) return;
+  await db.put('accounts', { ...existing, passwordHash });
+}
+
+/** 删除单个账户（忘记密码时按账户名重置；业务库数据保留在 review-app-{id}） */
+export async function deleteAccount(id: string): Promise<void> {
+  const db = await initMetaDB();
+  await db.delete('accounts', id);
+}
+
 /** 列出全部账户 */
 export async function listAccounts(): Promise<AccountRecord[]> {
   const db = await initMetaDB();
