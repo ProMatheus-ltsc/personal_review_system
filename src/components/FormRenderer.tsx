@@ -853,6 +853,26 @@ const FormRenderer: React.FC<FormRendererProps> = ({
    * 动态选项/条件提示，返回带 key 的受控或非受控表单控件
    */
   const renderFieldItem = (field: FormField) => {
+    // 买入单/卖出单：股票代码已在新建入口确定 → 自动填充并只读展示（避免误改导致仓位关联错乱）
+    if (
+        template.id === 'investment_checklist' &&
+        (recordRole === 'buy' || recordRole === 'sell') &&
+        field.id === 'buy_company_name'
+    ) {
+      return (
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1 text-gray-700">
+              投资标的（股票代码）<span className="text-red-500 ml-1">*</span>
+            </label>
+            <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900 font-medium">
+              {getValues('buy_company_name') || '-'}
+            </div>
+            <p className="text-xs mt-1 text-gray-400">
+              💡 股票代码已在新建入口选择，如需变更请返回新建入口重新创建
+            </p>
+          </div>
+      );
+    }
     // Check for validation errors from our custom validation
     const validationError = validationErrors.find((err) => err.fieldId === field.id);
     const fieldError = errors[field.id];
@@ -1058,6 +1078,16 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             {template.sections.map((section, index) => {
               // 投资清单：投资周期复盘 tab 仅在清仓后显示
               if (template.id === 'investment_checklist' && section.id === 'position_review' && !soldOutWatch) {
+                return null;
+              }
+              // 买入单/卖出单：复盘 tab（buy_review/sell_review）在未解锁（30 天未到）时隐藏，
+              // 避免出现「多余加锁页面」；30 天后自动出现
+              if (
+                template.id === 'investment_checklist' &&
+                (recordRole === 'buy' || recordRole === 'sell') &&
+                (section.id === 'buy_review' || section.id === 'sell_review') &&
+                isSectionLocked(index)
+              ) {
                 return null;
               }
               const hasErrors = sectionsWithErrors.has(index);

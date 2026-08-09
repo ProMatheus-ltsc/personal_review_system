@@ -1175,7 +1175,7 @@ export async function linkNewRecord(
     positionData = {
       id: uuidv4(),
       templateId: 'investment_checklist',
-      title: `${code} 仓位`,
+      title: `投资检查清单 - ${code} 持有仓位`,
       data: {
         record_role: RECORD_ROLE.POSITION,
         buy_company_name: code,
@@ -1214,6 +1214,8 @@ export async function linkNewRecord(
     positionData.data.linked_sell_record_ids = linked;
   }
 
+  // 关键：必须保存买入/卖出单本身（此前缺失导致跳转后记录不存在、代码字段为空）
+  await saveRecord(newRecord);
   await saveRecord(positionData);
   return { position: positionData, buyRecord: role === RECORD_ROLE.BUY ? newRecord : undefined, sellRecord: role === RECORD_ROLE.SELL ? newRecord : undefined };
 }

@@ -71,6 +71,51 @@ const FormPage: React.FC = () => {
     );
   }
 
+  // 记录不存在（recordId 存在但 record 加载失败 / 为空）：友好提示，避免静默渲染空表单
+  if (recordId && !record) {
+    return (
+      <div>
+        <header className="bg-white border-b border-gray-200 sticky top-14 md:top-16 z-10 -mx-4 md:-mx-6 px-4 md:px-6">
+          <div className="max-w-3xl mx-auto py-3 flex items-center">
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 transition mr-4"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              返回
+            </button>
+            <span className="text-sm text-gray-400">{template.name}</span>
+          </div>
+        </header>
+        <main className="py-6">
+          <div className="max-w-md mx-auto bg-white border border-gray-200 rounded-lg p-8 text-center">
+            <div className="text-5xl mb-3">📭</div>
+            <h2 className="text-lg font-semibold text-gray-800 mb-2">记录不存在或已被删除</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              该记录可能来自之前的测试会话，或已被清除。请返回新建或选择其他记录。
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              <button
+                onClick={() => navigate(template.id === 'investment_checklist' ? '/' : `/history/${template.id}`)}
+                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
+              >
+                {template.id === 'investment_checklist' ? '去新建' : '查看历史'}
+              </button>
+              <button
+                onClick={() => navigate(-1)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                返回上一页
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   // 投资检查清单新建模式：先进入股票代码中心入口（选择操作）
   if (templateId === 'investment_checklist' && !recordId) {
     return (

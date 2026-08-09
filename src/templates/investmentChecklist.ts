@@ -320,7 +320,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
     const iReview = byId('buy_review');
     return {
       ...investmentChecklistTemplate,
-      name: '买入复盘单',
+      name: '投资检查清单',
       description: '记录一次买入决策，30 天后复盘买入是否正确',
       phases: [
         {
@@ -349,7 +349,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
     const iReview = byId('sell_review');
     return {
       ...investmentChecklistTemplate,
-      name: '卖出复盘单',
+      name: '投资检查清单',
       description: '记录一次卖出决策，30 天后复盘卖点是否合理',
       phases: [
         {
@@ -379,7 +379,7 @@ export function buildRoleTemplate(role: InvestmentRecordRole): FormTemplate {
   const iPositionReview = byId('position_review');
   return {
     ...investmentChecklistTemplate,
-    name: '仓位单',
+    name: '投资检查清单',
     description: '以股票代码为准的投资周期看板 — 持有中复盘 + 清仓后完整复盘',
     phases: [
       {

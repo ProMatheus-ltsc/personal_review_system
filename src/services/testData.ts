@@ -33,17 +33,18 @@ function daysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-/** 构造一条记录并幂等初始化三层结构 */
+/** 构造一条记录并幂等初始化三层结构（统一单据名：投资检查清单 - {代码} {买入|卖出|持有仓位}） */
 function makeRecord(
   role: 'position' | 'buy' | 'sell',
   code: string,
   data: Record<string, unknown>
 ): FormRecord {
   const now = new Date().toISOString();
+  const roleLabel = role === 'position' ? '持有仓位' : role === 'buy' ? '买入' : '卖出';
   const record: FormRecord = {
     id: uuidv4(),
     templateId: 'investment_checklist',
-    title: `${code} ${role === 'position' ? '仓位单' : role === 'buy' ? '买入单' : '卖出单'}`,
+    title: `投资检查清单 - ${code} ${roleLabel}`,
     data: { record_role: role, buy_company_name: code, ...data },
     status: 'draft',
     createdAt: now,

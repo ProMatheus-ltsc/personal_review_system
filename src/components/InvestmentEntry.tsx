@@ -75,7 +75,8 @@ export default function InvestmentEntry() {
           const newRecord: FormRecord = {
             id: uuidv4(),
             templateId: 'investment_checklist',
-            title: `${normalized} ${kind === 'buy' ? '买入' : '卖出'}单`,
+            // 统一单据名：投资检查清单 - {代码} {买入|卖出}（仓位单为「持有仓位」）
+            title: `投资检查清单 - ${normalized} ${kind === 'buy' ? '买入' : '卖出'}`,
             data: {
               record_role: kind === 'buy' ? RECORD_ROLE.BUY : RECORD_ROLE.SELL,
               buy_company_name: normalized,
