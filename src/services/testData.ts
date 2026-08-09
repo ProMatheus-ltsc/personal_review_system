@@ -2,22 +2,31 @@
  * testData — 测试账户与测试数据初始化服务
  *
  * 为便于测试提供：
- * 1. 测试账户：密码 admin（当前系统为单密码认证，设置 password_hash = admin）
- * 2. test_mode 设置：跳过 30 天冷静期（复盘立即解锁）
- * 3. 自动填充覆盖多场景的投资检查清单测试数据
+ * 1. 测试账户：账户名 admin，密码 admin（多账户体系下的独立账户）
+ * 2. test_mode 设置：跳过 30 天冷静期（复盘立即解锁），仅写入 admin 自己的业务库
+ * 3. 自动填充覆盖多场景的投资检查清单测试数据（仅写入 admin 业务库）
  *
- * 幂等：通过 settings 中的 test_account_initialized 标记，只初始化一次。
- * 如需重新初始化，可在浏览器控制台执行 `localStorage.clear()` 后清除 IndexedDB，
- * 或调用 resetTestAccount() 清除标记后刷新。
+ * 账户隔离机制：
+ * - admin 账户注册在元库 accounts store（不影响其他账户）
+ * - 测试数据通过临时切换 setCurrentAccountId('admin') 写入 admin 专属业务库
+ *   review-app-admin，填充完成后恢复原账户上下文 → 完全不影响其他账户的数据
+ *
+ * 幂等：admin 业务库的 settings 中 test_account_initialized 标记，只初始化一次。
+ * 如需重新初始化，可清除 IndexedDB 数据，或调用 resetTestAccountMark() 清除标记后刷新。
  */
 import { v4 as uuidv4 } from 'uuid';
-import { setPassword } from '@/services/auth';
-import { saveRecord, setSetting, getSetting } from '@/services/db';
+import { registerAccount, getSessionAccountId } from '@/services/auth';
+import { saveRecord, setSetting, getSetting, getAccount, setCurrentAccountId, getCurrentAccountId } from '@/services/db';
 import type { FormRecord } from '@/types';
 import { ensureTradesInitialized, syncPositionReview, RECORD_ROLE } from '@/services/investmentMerge';
 
 /** 测试数据初始化标记（settings key）：已初始化则跳过，保证幂等 */
 const SEED_MARK_KEY = 'test_account_initialized';
+
+/** 测试账户名（账户 id 与登录名一致） */
+export const TEST_ACCOUNT_NAME = 'admin';
+/** 测试账户密码 */
+export const TEST_ACCOUNT_PASSWORD = 'admin';
 
 /** 相对今天的日期（YYYY-MM-DD） */
 function daysAgo(days: number): string {
@@ -343,39 +352,73 @@ function buildSeedRecords(): { buyRecords: FormRecord[]; sellRecords: FormRecord
 }
 
 /**
- * 初始化测试账户（幂等）：
- * 1. 设置密码为 admin
- * 2. 开启 test_mode（跳过 30 天冷静期）
+ * 初始化测试账户（幂等，数据写入 admin 专属业务库，不影响其他账户）：
+ * 1. 确保 admin 账户已注册到元库（不存在则创建，密码 admin）
+ * 2. 临时切换到 admin 业务库，开启 test_mode（跳过 30 天冷静期）
  * 3. 填充覆盖各场景的投资检查清单测试数据
+ * 4. 恢复调用前的账户上下文（登录用户的库不受影响）
  */
 export async function initializeTestAccount(): Promise<void> {
-  const seeded = await getSetting(SEED_MARK_KEY);
-  if (seeded === 'true') return;
-
   try {
-    // 1. 设置测试密码
-    await setPassword('admin');
-    // 2. 开启测试模式（跳过冷静期）
+    // 1. 确保 admin 账户存在（元库注册，不影响其他账户）
+    if (!(await getAccount(TEST_ACCOUNT_NAME))) {
+      await registerAccount(TEST_ACCOUNT_NAME, TEST_ACCOUNT_PASSWORD);
+    }
+
+    // 2. 记录调用前上下文，临时切换到 admin 业务库
+    const prevAccount = getCurrentAccountId();
+    setCurrentAccountId(TEST_ACCOUNT_NAME);
+
+    // 幂等标记在 admin 自己的业务库 settings 中
+    const seeded = await getSetting(SEED_MARK_KEY);
+    if (seeded === 'true') {
+      restoreContext(prevAccount);
+      return;
+    }
+
+    // 3. 开启测试模式（跳过冷静期）
     await setSetting('test_mode', 'true');
 
-    // 3. 填充测试数据
+    // 4. 填充测试数据
     const { buyRecords, sellRecords, positions } = buildSeedRecords();
     // 先存买卖单，再存仓位单（仓位单引用买卖单 id）
     for (const r of buyRecords) await saveRecord(r);
     for (const r of sellRecords) await saveRecord(r);
     for (const r of positions) await saveRecord(r);
 
-    // 4. 标记已初始化
+    // 5. 标记已初始化
     await setSetting(SEED_MARK_KEY, 'true');
+
+    // 6. 恢复原账户上下文（不影响其他账户）
+    restoreContext(prevAccount);
   } catch {
-    // 初始化失败不阻塞应用（下次启动重试）
+    // 初始化失败不阻塞应用（下次启动重试）；确保账户上下文被恢复
+    try {
+      const sessionAccount = getSessionAccountId();
+      setCurrentAccountId(sessionAccount);
+    } catch {
+      setCurrentAccountId(null);
+    }
   }
+}
+
+/**
+ * 恢复账户上下文：优先恢复 session 中的登录账户（刷新/并发登录场景），
+ * 否则回退到调用前的上下文。
+ */
+function restoreContext(prevAccount: string | null): void {
+  const sessionAccount = getSessionAccountId();
+  setCurrentAccountId(sessionAccount ?? prevAccount);
 }
 
 /**
  * 重置测试账户标记（便于重新填充测试数据）
  * 注意：不会删除已有记录，重新初始化会追加重复数据。
+ * 仅作用于 admin 业务库。
  */
 export async function resetTestAccountMark(): Promise<void> {
+  const prevAccount = getCurrentAccountId();
+  setCurrentAccountId(TEST_ACCOUNT_NAME);
   await setSetting(SEED_MARK_KEY, '');
+  setCurrentAccountId(prevAccount);
 }

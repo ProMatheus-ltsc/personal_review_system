@@ -4,30 +4,111 @@
  * 基于 IndexedDB（通过 idb 库封装）的本地持久化存储服务。
  * 提供记录的 CRUD、搜索、导入导出及统计功能。
  *
- * 数据库结构：
+ * 多账户隔离设计：
+ * - **元库** `review-app`：存储账户列表（accounts store：{ id, passwordHash, createdAt }）
+ *   —— 账户信息对所有账户可见，用于登录验证
+ * - **业务库** `review-app-{accountId}`：每个账户一份独立的 records + settings store
+ *   —— 不同账户的数据完全隔离，互不可见
+ * - `setCurrentAccountId(id)` 切换当前账户上下文，之后所有业务操作自动读写对应账户的库；
+ *   未登录时（accountId 为 null）回退到 `review-app-default`（兼容未改造场景）
+ *
+ * 数据库结构（业务库）：
  * - records store: 存储所有复盘记录（FormRecord），按 id 为主键
  * - settings store: 存储应用配置项（key-value 形式）
  */
 import { openDB, IDBPDatabase } from 'idb';
 import { FormRecord } from '@/types';
 
-const DB_NAME = 'review-app';
+const META_DB_NAME = 'review-app';
+const META_DB_VERSION = 2;
+const DATA_DB_PREFIX = 'review-app-';
 const DB_VERSION = 1;
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
+let metaDbPromise: Promise<IDBPDatabase> | null = null;
+/** 当前账户 id（null = 未登录，回退默认库） */
+let currentAccountId: string | null = null;
+
+/** 获取当前账户 id（未登录为 null） */
+export function getCurrentAccountId(): string | null {
+  return currentAccountId;
+}
 
 /**
- * 初始化并获取数据库实例（单例模式）
+ * 切换当前账户上下文（登录/登出时调用）。
+ * 切换后重置业务库缓存，下一次业务操作将打开新账户的库。
+ */
+export function setCurrentAccountId(id: string | null): void {
+  if (currentAccountId === id) return;
+  currentAccountId = id;
+  dbPromise = null; // 强制重新打开对应账户的业务库
+}
+
+/** 账户记录结构（元库存放） */
+export interface AccountRecord {
+  id: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
+/**
+ * 初始化并获取元数据库实例（账户列表），单例模式
+ */
+export function initMetaDB(): Promise<IDBPDatabase> {
+  if (!metaDbPromise) {
+    metaDbPromise = openDB(META_DB_NAME, META_DB_VERSION, {
+      upgrade(db) {
+        // 元库 v2：新增 accounts store（旧 records/settings store 保留但不再用于业务）
+        if (!db.objectStoreNames.contains('accounts')) {
+          db.createObjectStore('accounts', { keyPath: 'id' });
+        }
+      },
+    });
+  }
+  return metaDbPromise;
+}
+
+// ============================================================
+// 账户 CRUD（元库）
+// ============================================================
+
+/** 创建账户（写入元库 accounts store） */
+export async function createAccount(id: string, passwordHash: string): Promise<void> {
+  const db = await initMetaDB();
+  await db.put('accounts', { id, passwordHash, createdAt: new Date().toISOString() } as AccountRecord);
+}
+
+/** 按 id 获取账户 */
+export async function getAccount(id: string): Promise<AccountRecord | undefined> {
+  const db = await initMetaDB();
+  return db.get('accounts', id);
+}
+
+/** 列出全部账户 */
+export async function listAccounts(): Promise<AccountRecord[]> {
+  const db = await initMetaDB();
+  return db.getAll('accounts');
+}
+
+/** 清空全部账户（重置回首次使用状态；业务库数据保留在各自账户库中） */
+export async function deleteAllAccounts(): Promise<void> {
+  const db = await initMetaDB();
+  await db.clear('accounts');
+}
+
+/**
+ * 初始化并获取当前账户的业务数据库实例（单例模式）
  *
  * 首次调用时创建数据库并建立 object store 和索引；
- * 后续调用直接返回已有连接 Promise。
+ * 后续调用直接返回已有连接 Promise（切换账户时缓存被重置）。
  *
  * @returns IndexedDB 数据库实例的 Promise
  * @throws 当浏览器不支持 IndexedDB 或存储空间不足时可能抛出异常
  */
 export function initDB(): Promise<IDBPDatabase> {
   if (!dbPromise) {
-    dbPromise = openDB(DB_NAME, DB_VERSION, {
+    const accountId = currentAccountId || 'default';
+    dbPromise = openDB(`${DATA_DB_PREFIX}${accountId}`, DB_VERSION, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('records')) {
           const recordStore = db.createObjectStore('records', { keyPath: 'id' });
