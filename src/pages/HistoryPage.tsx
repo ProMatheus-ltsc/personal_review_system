@@ -22,6 +22,12 @@ import clsx from 'clsx';
 import SearchBar from '@/components/SearchBar';
 import HistoryList from '@/components/HistoryList';
 import InvestmentTable from '@/components/InvestmentTable';
+import {
+  exportInvestmentRecords,
+  buildExportFilename,
+  filterInvestmentRecords,
+  type InvestmentExportFilter,
+} from '@/services/investmentExport';
 
 type SortOrder = 'newest' | 'oldest';
 type StatusFilter = 'all' | 'draft' | 'completed';
@@ -46,6 +52,57 @@ export default function HistoryPage() {
   // 批量选择状态
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // 投资清单导出状态
+  const [exportCode, setExportCode] = useState('');
+  const [exportDateFrom, setExportDateFrom] = useState('');
+  const [exportDateTo, setExportDateTo] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<string | null>(null);
+
+  // 当前投资清单记录（仅模板筛选，不过滤搜索/状态，让导出条件独立可控）
+  const investmentRecords = useMemo(() => {
+    return records.filter((r) => r.templateId === 'investment_checklist');
+  }, [records]);
+
+  // 导出过滤条件下符合的记录数（实时预览）
+  const exportMatchCount = useMemo(() => {
+    if (activeTemplateId !== 'investment_checklist') return 0;
+    const filter: InvestmentExportFilter = {
+      code: exportCode,
+      dateFrom: exportDateFrom,
+      dateTo: exportDateTo,
+    };
+    return filterInvestmentRecords(investmentRecords, filter).length;
+  }, [activeTemplateId, investmentRecords, exportCode, exportDateFrom, exportDateTo]);
+
+  const handleExport = useCallback(async () => {
+    if (exportMatchCount === 0) {
+      setExportResult('没有符合条件的记录可导出');
+      return;
+    }
+    setExporting(true);
+    try {
+      const filter: InvestmentExportFilter = {
+        code: exportCode,
+        dateFrom: exportDateFrom,
+        dateTo: exportDateTo,
+      };
+      const json = exportInvestmentRecords(investmentRecords, filter);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildExportFilename(filter);
+      a.click();
+      URL.revokeObjectURL(url);
+      setExportResult(`✅ 已导出 ${exportMatchCount} 条投资记录`);
+    } catch (err: unknown) {
+      setExportResult(`导出失败：${err instanceof Error ? err.message : '未知错误'}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [exportMatchCount, exportCode, exportDateFrom, exportDateTo, investmentRecords]);
 
   const filteredRecords = useMemo(() => {
     let result = [...records];
@@ -275,6 +332,91 @@ export default function HistoryPage() {
             )}
         </div>
       </div>
+
+      {/* 投资清单导出面板 */}
+      {activeTemplateId === 'investment_checklist' && (
+        <div className="mb-6 bg-indigo-50/60 border border-indigo-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">📤</span>
+            <h3 className="text-sm font-semibold text-indigo-800">导出投资记录（JSON）</h3>
+            <span className="text-[11px] text-indigo-400 font-normal">
+              匹配 {exportMatchCount} 条记录
+            </span>
+          </div>
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+            {/* 股票代码 */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500 font-medium">股票代码</label>
+              <input
+                type="text"
+                value={exportCode}
+                onChange={(e) => setExportCode(e.target.value)}
+                placeholder="如 AAPL / 00700 / 600519"
+                className="w-full sm:w-44 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            {/* 时间段 */}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500 font-medium">开始日期</label>
+              <input
+                type="date"
+                value={exportDateFrom}
+                onChange={(e) => setExportDateFrom(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500 font-medium">结束日期</label>
+              <input
+                type="date"
+                value={exportDateTo}
+                onChange={(e) => setExportDateTo(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+            {/* 导出按钮 */}
+            <div className="flex items-end gap-2">
+              <button
+                onClick={handleExport}
+                disabled={exporting || exportMatchCount === 0}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {exporting ? '导出中...' : `导出 JSON (${exportMatchCount})`}
+              </button>
+              {(exportCode || exportDateFrom || exportDateTo) && (
+                <button
+                  onClick={() => {
+                    setExportCode('');
+                    setExportDateFrom('');
+                    setExportDateTo('');
+                    setExportResult(null);
+                  }}
+                  className="px-3 py-2 text-sm text-indigo-500 hover:text-indigo-700 transition-colors"
+                >
+                  清空条件
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-gray-400">
+            留空全部条件 = 全量导出；时间段按<b>买入日期</b>过滤（含边界）；股票代码与时间段可组合使用。
+          </p>
+          {exportResult && (
+            <p
+              className={clsx(
+                'mt-2 text-sm',
+                exportResult.startsWith('✅')
+                  ? 'text-green-600'
+                  : exportResult.startsWith('导出失败')
+                  ? 'text-red-600'
+                  : 'text-amber-600'
+              )}
+            >
+              {exportResult}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Record list */}
       {viewMode === 'table' && activeTemplateId === 'investment_checklist' ? (
