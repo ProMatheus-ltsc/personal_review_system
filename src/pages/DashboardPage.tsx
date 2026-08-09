@@ -19,7 +19,6 @@ import TemplateCard from '@/components/TemplateCard';
 import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
 import { isFieldEmpty } from '@/utils/formValidation';
-import { findPendingReviewTrades, ensureTradesInitialized } from '@/services/investmentMerge';
 import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
 import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, PositionOverview, type ReviewItem, type PositionItem } from '@/components/dashboard';
 
@@ -35,7 +34,7 @@ import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, Contribution
  *
  * 提醒触发条件：
  * - 备份提醒：记录数 >= 10 且从未导出过
- * - 投资复盘提醒：有 completed 的投资检查清单且距今 >= 30 天（冷静期结束）
+ * - 投资复盘提醒：投资检查清单按单据角色、决策日志按完成时间，分别按可配置等待期提醒
  * - 首次访问引导：未设置 firstVisitDismissed 标记
  */
 export default function DashboardPage() {
@@ -49,24 +48,32 @@ export default function DashboardPage() {
   const [lastBackupRecordCount, setLastBackupRecordCount] = useState<number>(0);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const [backupCheckDone, setBackupCheckDone] = useState(false);
-  // 测试模式：复盘提醒立即生效（冷静期 0 天）
-  const [testMode, setTestMode] = useState(false);
-  // 各场景复盘冷静期天数（从设置读取，默认 30）
-  const [cooldownDays, setCooldownDays] = useState({ buy: DEFAULT_COOLDOWN_DAYS, sell: DEFAULT_COOLDOWN_DAYS, position: DEFAULT_COOLDOWN_DAYS });
+  // 各场景复盘等待期天数（从设置读取，默认 30；决策日志长期复盘也支持配置）
+  const [cooldownDays, setCooldownDays] = useState({
+    buy: DEFAULT_COOLDOWN_DAYS,
+    sell: DEFAULT_COOLDOWN_DAYS,
+    position: DEFAULT_COOLDOWN_DAYS,
+    decision: DEFAULT_COOLDOWN_DAYS,
+  });
 
   useEffect(() => {
-    getSetting('test_mode').then((v) => setTestMode(v === 'true'));
     (async () => {
-      const [buy, sell, pos] = await Promise.all([
+      const [buy, sell, pos, decision] = await Promise.all([
         getSetting(COOLDOWN_SETTINGS.BUY),
         getSetting(COOLDOWN_SETTINGS.SELL),
         getSetting(COOLDOWN_SETTINGS.POSITION),
+        getSetting(COOLDOWN_SETTINGS.DECISION),
       ]);
       const toNum = (v: unknown, fallback: number): number => {
         const n = Number(v);
         return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
       };
-      setCooldownDays({ buy: toNum(buy, DEFAULT_COOLDOWN_DAYS), sell: toNum(sell, DEFAULT_COOLDOWN_DAYS), position: toNum(pos, DEFAULT_COOLDOWN_DAYS) });
+      setCooldownDays({
+        buy: toNum(buy, DEFAULT_COOLDOWN_DAYS),
+        sell: toNum(sell, DEFAULT_COOLDOWN_DAYS),
+        position: toNum(pos, DEFAULT_COOLDOWN_DAYS),
+        decision: toNum(decision, DEFAULT_COOLDOWN_DAYS),
+      });
     })();
   }, []);
 
@@ -183,14 +190,13 @@ export default function DashboardPage() {
       .filter((p) => p.remainingQty > 0);
   }, [records]);
 
-  // 复盘提醒：投资检查清单按单据角色独立提醒（各场景冷静期可配置），决策日志按完成时间
+  // 复盘提醒：投资检查清单按单据角色独立提醒（各场景等待期可配置），决策日志按完成时间
   const { readyForReview, pendingReview } = useMemo(() => {
-    // 测试模式：冷静期 0 天（所有待复盘立即 ready）；否则按角色配置天数
+    // 按角色配置等待期天数（买入/卖出/投资周期；position 以外的旧记录不参与提醒）
     const cooldownFor = (role: string | undefined): number => {
-      if (testMode) return 0;
       if (role === 'buy') return cooldownDays.buy;
       if (role === 'sell') return cooldownDays.sell;
-      return cooldownDays.position; // position / 旧模型
+      return cooldownDays.position;
     };
     const ready: ReviewItem[] = [];
     const pending: ReviewItem[] = [];
@@ -245,30 +251,8 @@ export default function DashboardPage() {
           const reviewed = !isFieldEmpty(record.data.position_lesson);
           if (reviewed) return;
           pushItem(`pos_${record.id}`, `${code} · 投资周期复盘`, `清仓于 ${sellDate}`, sellDate);
-        } else {
-          // 旧模型（无 role）：Trade 层优先按每笔卖出提醒，回退整单
-          const initialized = ensureTradesInitialized(record.data);
-          const recordWithInit = { ...record, data: initialized };
-          const pendingTrades = findPendingReviewTrades(recordWithInit);
-          if (pendingTrades.length > 0) {
-            pendingTrades.forEach((trade) => {
-              if (!trade.date) return;
-              pushItem(
-                  `${record.id}_${trade.id}`,
-                  `${code} · 卖出 ${trade.qty} 股 @ ${trade.price}`,
-                  `卖出于 ${trade.date}`,
-                  trade.date
-              );
-            });
-            return;
-          }
-          const sellDate = record.data.sell_date as string | undefined;
-          if (!sellDate || String(sellDate).trim() === '') return;
-          const reviewEntries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
-          const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
-          if (reviewed) return;
-          pushItem(record.id, code, `卖出于 ${String(sellDate)}`, String(sellDate));
         }
+        // 无 record_role 的旧格式记录不参与复盘提醒（历史页/统计已不展示）
       } else if (record.templateId === 'decision_log' && record.status === 'completed') {
         const completedAt = (record.data._completedAt as string) || record.createdAt.slice(0, 10);
         if (!completedAt || String(completedAt).trim() === '') return;
@@ -289,13 +273,13 @@ export default function DashboardPage() {
           dateLabel: `完成于 ${String(completedAt)}`,
           link: `/form/decision_log/${record.id}`,
         };
-        if (daysSince >= 30) ready.push(item); // 决策日志复盘冷静期固定 30 天
+        if (daysSince >= cooldownDays.decision) ready.push(item); // 决策日志长期复盘等待期（可配置）
         else pending.push(item);
       }
     });
 
     return { readyForReview: ready, pendingReview: pending };
-  }, [records, testMode, cooldownDays]);
+  }, [records, cooldownDays]);
 
   return (
     <div>

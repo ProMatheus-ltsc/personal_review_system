@@ -3,7 +3,8 @@
  *
  * 为便于测试提供：
  * 1. 测试账户：账户名 admin，密码 admin（多账户体系下的独立账户）
- * 2. test_mode 设置：跳过 30 天冷静期（复盘立即解锁），仅写入 admin 自己的业务库
+ * 2. 默认各场景复盘等待期 = 0 天（买入/卖出/投资周期/决策日志长期复盘）
+ *    —— 机制与普通账户完全一致（走正常等待期逻辑、页面可配置），仅默认值不同，便于测试
  * 3. 自动填充覆盖多场景的投资检查清单测试数据（仅写入 admin 业务库）
  *
  * 账户隔离机制：
@@ -19,6 +20,7 @@ import { registerAccount, setAccountPassword, getSessionAccountId } from '@/serv
 import { saveRecord, setSetting, getSetting, getAccount, setCurrentAccountId, getCurrentAccountId } from '@/services/db';
 import type { FormRecord } from '@/types';
 import { ensureTradesInitialized, syncPositionReview, RECORD_ROLE } from '@/services/investmentMerge';
+import { COOLDOWN_SETTINGS } from '@/templates/investmentChecklist';
 
 /** 测试数据初始化标记（settings key）：已初始化则跳过，保证幂等 */
 const SEED_MARK_KEY = 'test_account_initialized';
@@ -652,8 +654,8 @@ function buildTemplateRecords(): FormRecord[] {
 
 /**
  * 初始化测试账户（幂等，数据写入 admin 专属业务库，不影响其他账户）：
- * 1. 确保 admin 账户已注册到元库（不存在则创建，密码 admin）
- * 2. 临时切换到 admin 业务库，开启 test_mode（跳过 30 天冷静期）
+ * 1. 确保 admin 账户已注册到元库（不存在则创建，密码强制 admin/admin）
+ * 2. 临时切换到 admin 业务库，写入各场景复盘等待期默认值 0 天（买入/卖出/投资周期/决策日志）
  * 3. 填充覆盖各场景的投资检查清单测试数据
  * 4. 恢复调用前的账户上下文（登录用户的库不受影响）
  */
@@ -677,8 +679,11 @@ export async function initializeTestAccount(): Promise<void> {
       return;
     }
 
-    // 3. 开启测试模式（跳过冷静期）
-    await setSetting('test_mode', 'true');
+    // 3. admin 默认各场景复盘等待期 = 0 天（机制与普通账户完全一致，仅默认值不同，便于测试）
+    await setSetting(COOLDOWN_SETTINGS.BUY, '0');
+    await setSetting(COOLDOWN_SETTINGS.SELL, '0');
+    await setSetting(COOLDOWN_SETTINGS.POSITION, '0');
+    await setSetting(COOLDOWN_SETTINGS.DECISION, '0');
 
     // 4. 填充测试数据（投资检查清单三角色 + 其他模板）
     const { buyRecords, sellRecords, positions } = buildSeedRecords();

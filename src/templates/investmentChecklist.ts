@@ -303,11 +303,13 @@ export const investmentChecklistTemplate: FormTemplate = {
 
 export type InvestmentRecordRole = 'position' | 'buy' | 'sell';
 
-/** 各场景复盘冷静期配置键（settings store，值 = 天数） */
+/** 各场景复盘等待期配置键（settings store，值 = 天数） */
 export const COOLDOWN_SETTINGS = {
   BUY: 'cooldown_days_buy',
   SELL: 'cooldown_days_sell',
   POSITION: 'cooldown_days_position',
+  /** 决策日志的长期复盘等待期（决策完成后解锁长期复盘） */
+  DECISION: 'cooldown_days_decision',
 } as const;
 
 /** 默认冷静期（天） */

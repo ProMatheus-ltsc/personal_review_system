@@ -28,22 +28,17 @@ import PhaseIndicator from './PhaseIndicator';
 import Toast from './Toast';
 import ReferenceSidebar from './ReferenceSidebar';
 import RepeatableSection from './RepeatableSection';
-import InvestmentMergePanel, { type MergeLot, type MergedSnapshot } from './InvestmentMergePanel';
+import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
 import { buildRoleTemplate, COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
 import {
-  mergeSameCodeBuys,
-  applySellBatch,
-  undoLastSellBatch,
   ensureTradesInitialized,
   syncReviewsFromEntries,
   syncPositionReview,
-  isTradeReviewedInEntries,
   syncPositionFromLinked,
   getLinkedRecords,
   ensurePositionForBuyRecord,
-  PHASE_REVIEW,
   type InvestmentTrade,
 } from '@/services/investmentMerge';
 
@@ -103,40 +98,59 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                                                      onSave,
                                                    }) => {
   /**
-   * 投资检查清单按单据角色（record_role）动态构建模板：
-   * - position：仓位单（持有中复盘 + 清仓后投资周期复盘）
-   * - buy：买入复盘单（买入前检查 + 冷静期后买入复盘）
-   * - sell：卖出复盘单（卖出决策 + 冷静期后卖出复盘）
-   * 其余模板原样使用。
-   * 复盘冷静期天数从设置读取（cooldown_days_buy/sell/position，默认 30，可在入口页配置）。
+   * 按模板动态构建：
+   * - 投资检查清单：按单据角色（record_role）动态构建模板
+   *   （position：持有中 + 清仓后投资周期复盘；buy：买入前 + 买入复盘；sell：卖出决策 + 卖出复盘）
+   * - 决策日志：按配置动态覆盖长期复盘阶段的等待期（cooldown_days_decision，默认 30）
+   * 其余模板原样使用。等待期天数从各账户 settings 读取（可在入口页/设置面板配置）。
    */
-  // 各场景复盘冷静期天数（异步读取设置后生效）
-  const [cooldownDays, setCooldownDays] = useState({ buy: DEFAULT_COOLDOWN_DAYS, sell: DEFAULT_COOLDOWN_DAYS, position: DEFAULT_COOLDOWN_DAYS });
+  // 各场景复盘等待期天数（异步读取设置后生效）
+  const [cooldownDays, setCooldownDays] = useState({
+    buy: DEFAULT_COOLDOWN_DAYS,
+    sell: DEFAULT_COOLDOWN_DAYS,
+    position: DEFAULT_COOLDOWN_DAYS,
+    decision: DEFAULT_COOLDOWN_DAYS,
+  });
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [buy, sell, pos] = await Promise.all([
+      const [buy, sell, pos, decision] = await Promise.all([
         getSetting(COOLDOWN_SETTINGS.BUY),
         getSetting(COOLDOWN_SETTINGS.SELL),
         getSetting(COOLDOWN_SETTINGS.POSITION),
+        getSetting(COOLDOWN_SETTINGS.DECISION),
       ]);
       if (cancelled) return;
       const toNum = (v: unknown, fallback: number): number => {
         const n = Number(v);
         return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
       };
-      setCooldownDays({ buy: toNum(buy, DEFAULT_COOLDOWN_DAYS), sell: toNum(sell, DEFAULT_COOLDOWN_DAYS), position: toNum(pos, DEFAULT_COOLDOWN_DAYS) });
+      setCooldownDays({
+        buy: toNum(buy, DEFAULT_COOLDOWN_DAYS),
+        sell: toNum(sell, DEFAULT_COOLDOWN_DAYS),
+        position: toNum(pos, DEFAULT_COOLDOWN_DAYS),
+        decision: toNum(decision, DEFAULT_COOLDOWN_DAYS),
+      });
     })();
     return () => { cancelled = true; };
   }, []);
 
   const template = useMemo(() => {
-    if (rawTemplate.id !== 'investment_checklist') return rawTemplate;
-    const role = initialData?.record_role as string | undefined;
-    if (role === 'buy') return buildRoleTemplate('buy', cooldownDays.buy);
-    if (role === 'sell') return buildRoleTemplate('sell', cooldownDays.sell);
-    if (role === 'position') return buildRoleTemplate('position', cooldownDays.position);
+    if (rawTemplate.id === 'investment_checklist') {
+      const role = initialData?.record_role as string | undefined;
+      if (role === 'buy') return buildRoleTemplate('buy', cooldownDays.buy);
+      if (role === 'sell') return buildRoleTemplate('sell', cooldownDays.sell);
+      if (role === 'position') return buildRoleTemplate('position', cooldownDays.position);
+      return rawTemplate;
+    }
+    // 决策日志：动态覆盖长期复盘阶段的等待期（配置化，默认 30 天）
+    if (rawTemplate.id === 'decision_log' && rawTemplate.phases) {
+      const phases = rawTemplate.phases.map((p) =>
+          p.id === 'long_term' ? { ...p, unlockAfterDays: cooldownDays.decision } : p
+      );
+      return { ...rawTemplate, phases };
+    }
     return rawTemplate;
   }, [rawTemplate, initialData?.record_role, cooldownDays]);
 
@@ -157,17 +171,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const [loadedFromPrevWeek, setLoadedFromPrevWeek] = useState(false);
   /** 是否已经对只读阶段回看做过一次 Toast 提示（后续不再重复弹） */
   const [readonlyToastShown, setReadonlyToastShown] = useState(false);
-  /** 测试模式：跳过 30 天冷静期（复盘立即解锁） */
-  const [skipCooldown, setSkipCooldown] = useState(false);
-
-  // 读取 test_mode 设置（测试模式下跳过复盘冷静期）
-  useEffect(() => {
-    let cancelled = false;
-    getSetting('test_mode').then((v) => {
-      if (!cancelled) setSkipCooldown(v === 'true');
-    });
-    return () => { cancelled = true; };
-  }, []);
   /**
    * 用户实际进入过的最高阶段索引。
    * currentPhaseIndex 会在字段填满时自动推进（用于解锁下一阶段），
@@ -377,8 +380,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       formData[key] = watchedRepeatableEntries[i];
     });
     const createdAt = initialData ? (initialData._createdAt as string) : undefined;
-    return getCurrentPhaseIndex(phases, formData, template.sections, createdAt, { skipCooldown });
-  }, [phases, phaseCompletionFields, watchedPhaseValues, repeatableEntriesKeys, watchedRepeatableEntries, template.sections, initialData, skipCooldown]);
+    return getCurrentPhaseIndex(phases, formData, template.sections, createdAt);
+  }, [phases, phaseCompletionFields, watchedPhaseValues, repeatableEntriesKeys, watchedRepeatableEntries, template.sections, initialData]);
 
   // Auto-navigate to current phase's first section on initial load (for existing records)
   useEffect(() => {
@@ -463,42 +466,23 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       initialData?._status as 'draft' | 'completed' || 'draft'
   );
 
-  /** 将合并后的数据同步回表单，保证界面与库中一致（含卖出字段清空） */
-  const syncMergedData = useCallback(
-      (data: Record<string, unknown>) => {
-        (
-            [
-              'buy_price',
-              'merged_buy_lots',
-              'merged_total_qty',
-              'sell_exit_price',
-              'sell_date',
-              'sell_quantity',
-              'sell_reason',
-              'sell_reason_other',
-              'sell_emotion_state',
-              'sell_check_reason',
-              'sell_check_rebuy',
-              'merged_sell_lots',
-              'merged_total_sell_qty',
-              'last_sell_date',
-              'sold_out',
-              'remaining_qty',
-              'sell_status',
-              'merged_snapshots',
-              'parent_position_id',
-              '_sell_batch_id',
-              // Trade + Review 三层模型字段
-              'merged_trades',
-              'merged_reviews',
-              'merged_position_review',
-            ] as const
-        ).forEach((k) => {
-          if (k in data) setValue(k, data[k], { shouldDirty: false });
-        });
-      },
-      [setValue]
-  );
+  // 投资清单：买入单/卖出单关联的仓位单（卖出上下文/复盘量化对比的数据源，
+  // 平均成本、剩余持仓、目标价、止损价等从仓位单派生，而非本单据自身的买入字段）
+  const [linkedPosition, setLinkedPosition] = useState<FormRecord | undefined>(undefined);
+  const positionIdWatch = watch('position_record_id') as string | undefined;
+  useEffect(() => {
+    if (template.id !== 'investment_checklist' || !positionIdWatch) {
+      setLinkedPosition(undefined);
+      return;
+    }
+    let cancelled = false;
+    getRecord(positionIdWatch).then((pos) => {
+      if (!cancelled) setLinkedPosition(pos);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [template.id, positionIdWatch]);
 
   const performSave = useCallback(
       async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {
@@ -572,52 +556,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                     );
                   }
                 }
-              } else if (recordRole === 'position') {
-                // 仓位单保存：汇总由 syncPositionFromLinked 维护（编辑买入信息不会改变汇总）
-                // 无需额外处理
-              } else {
-                // 旧模型（无 record_role）：保留原有合并逻辑
-                // 卖出拆分并入：填写了卖出 → 本笔卖出拆成批次立即并入当前单据
-                // 已全部卖出（sold_out）的单据顶层卖出字段仍保留加权卖出价，
-                // 复盘阶段的后续自动保存不应再当作"新的一笔卖出"重新校验，否则会
-                // 反复触发"超过剩余持仓"的误报
-                if (!isFieldEmpty(record.data.sell_exit_price) && record.data.sold_out !== true) {
-                  const res = await applySellBatch(record);
-                  if (res?.error) {
-                    showToast(res.error, 'error');
-                  } else if (res) {
-                    syncMergedData(res.data);
-                    if (res.soldOut) {
-                      showToast(
-                          `已全部卖出（${code}），平均卖出价 ${res.data.sell_exit_price ?? ''}，复盘将在冷静期结束后开放`,
-                          'success'
-                      );
-                    } else {
-                      // 部分卖出：单据回到持有状态，需要降级 visitedMaxPhase 以解除持有阶段的只读锁定，
-                      // 让用户可以继续为剩余持仓添加新的持有检查
-                      if (phases) {
-                        const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
-                        if (holdingPhaseIdx >= 0) {
-                          setVisitedMaxPhase(holdingPhaseIdx);
-                        }
-                      }
-                      showToast(
-                          `已记录本次卖出（${code}），剩余持仓 ${res.remainingQty ?? 0}，可继续追加买入`,
-                          'success'
-                      );
-                    }
-                  }
-                } else {
-                  // 买入合并：前提是同代码且双方都是持有中的开放持仓（未清仓）
-                  const res = await mergeSameCodeBuys(record);
-                  if (res) {
-                    syncMergedData(res.data);
-                    showToast(
-                        `已自动汇总 ${res.merged} 笔同代码买入记录（${code}），平均买入价已更新`,
-                        'success'
-                    );
-                  }
-                }
               }
             }
           }
@@ -633,7 +571,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           return null;
         }
       },
-      [buildRecord, save, recordStatus, getValues, setValue, template, syncMergedData, showToast, cooldownDays]
+      [buildRecord, save, recordStatus, getValues, setValue, template, showToast, cooldownDays]
   );
 
   // Auto-save every 30 seconds (skip fully read-only completed records)
@@ -690,7 +628,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             const sectionPhaseIdx = getSectionPhaseIndex(phases, index);
             const phase = phases[sectionPhaseIdx];
             if (phase?.unlockAfterDays) {
-              const lockInfo = getPhaseTimeLockInfo(phase, getValues(), initialData ? (initialData._createdAt as string) : undefined, { skipCooldown });
+              const lockInfo = getPhaseTimeLockInfo(phase, getValues(), initialData ? (initialData._createdAt as string) : undefined);
               if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
                 showToast(`「${template.sections[index].title}」还需等待 ${lockInfo.daysRemaining} 天冷静期，之后即可复盘`, 'info');
                 return;
@@ -792,52 +730,16 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         const lockInfo = getPhaseTimeLockInfo(
             nextPhase,
             getValues(),
-            initialData ? (initialData._createdAt as string) : undefined,
-            { skipCooldown }
+            initialData ? (initialData._createdAt as string) : undefined
         );
         if (lockInfo && lockInfo.unlockDate.getFullYear() < 9000) {
           msg = `已标记为完成，「${nextPhase.label}」将在 ${lockInfo.daysRemaining} 天后开放`;
-        } else if (skipCooldown && nextPhase) {
-          msg = `已标记为完成，「${nextPhase.label}」已可复盘（测试账号已跳过等待期）`;
         }
       }
       showToast(msg, 'success');
       onSave?.(record);
     }
-  }, [canMarkComplete, performSave, phases, template.name, getValues, initialData, showToast, onSave, skipCooldown]);
-
-  /** 撤销最近一笔卖出（投资清单）：仅未复盘时可撤销 */
-  const handleUndoLastSell = useCallback(async () => {
-    const record = buildRecord('draft');
-    const res = await undoLastSellBatch(record);
-    if (res?.error) {
-      showToast(res.error, 'error');
-    } else if (res) {
-      syncMergedData(res.data);
-      // 撤销卖出后，如果不再是全部卖出状态，记录应降回 draft 以解锁卖出阶段的编辑
-      if (!res.soldOut && recordStatus === 'completed') {
-        setRecordStatus('draft');
-      }
-      // 撤销后需要降级 visitedMaxPhase：
-      // - 如果仍有剩余持仓（部分卖出状态），降到持有阶段（索引1），持有和卖出都可编辑
-      // - 如果完全回到未卖出状态（无任何卖出批次），同样降到持有阶段
-      // - 需求：撤销后 recordStatus 降回 draft，visitedMaxPhase 降回卖出阶段，卖出 section 恢复可编辑
-      //   但部分卖出场景下持有阶段也需要可编辑（用户需为剩余持仓添加持有检查）
-      if (!res.soldOut && phases) {
-        const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
-        const sellingPhaseIdx = phases.findIndex((p) => p.completesRecord);
-        // 有剩余持仓：降到持有阶段（持有+卖出都可编辑）
-        // 无剩余卖出批次（完全撤销）：也降到持有阶段
-        const targetPhase = (res.remainingQty !== undefined && res.remainingQty > 0)
-            ? (holdingPhaseIdx >= 0 ? holdingPhaseIdx : sellingPhaseIdx)
-            : (sellingPhaseIdx >= 0 ? sellingPhaseIdx : holdingPhaseIdx);
-        if (targetPhase >= 0 && visitedMaxPhase > targetPhase) {
-          setVisitedMaxPhase(targetPhase);
-        }
-      }
-      showToast('已撤销最近一笔卖出', 'success');
-    }
-  }, [buildRecord, syncMergedData, showToast]);
+  }, [canMarkComplete, performSave, phases, template.name, getValues, initialData, showToast, onSave]);
 
   /** 下一步：切换到后一个 section tab（触发保存） */
   const goNext = () => {
@@ -995,20 +897,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // For annual review: get the year value for the sidebar
   const annualYearValue = template.id === 'annual_review' ? (watch('annual_year') as string || String(new Date().getFullYear())) : '';
 
-  // 投资清单：是否已复盘（Trade 层优先 → entries 回退）→ 控制撤销卖出按钮
-  const sellReviewEntries = watch('sell_review_entries') as Record<string, unknown>[] | undefined;
+  // 投资清单：merged_trades 派生（SELL 选项注入 + 投资周期概览交易笔数）
   const mergedTradesWatch = watch('merged_trades') as InvestmentTrade[] | undefined;
-  const mergedReviewsWatch = watch('merged_reviews') as Record<string, unknown>[] | undefined;
-  const sellReviewed = (() => {
-    // Trade 层优先：检查 merged_reviews 中是否有 lesson 非空
-    if (Array.isArray(mergedReviewsWatch) && mergedReviewsWatch.some((rv) => !isFieldEmpty(rv.lesson))) {
-      return true;
-    }
-    // 回退到表单 entries
-    return isTradeReviewedInEntries(sellReviewEntries || []);
-  })();
-  const mergedSellLotsWatch = watch('merged_sell_lots') as unknown[] | undefined;
-  const hasSellLots = Array.isArray(mergedSellLotsWatch) && mergedSellLotsWatch.length > 0;
 
   // 投资清单：SELL trades 选项（用于 sell_review_trade_id select 动态注入）
   // 每笔卖出交易生成一个选项，格式：卖出日期 · 价格 · 数量
@@ -1092,15 +982,12 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                 onPhaseClick={handlePhaseClick}
                 formData={getValues()}
                 recordCreatedAt={initialData ? (initialData._createdAt as string) : undefined}
-                skipCooldown={skipCooldown}
             />
         )}
 
-        {/* 投资清单：仓位汇总面板（同股票代码所有买入/卖出明细，表格形式）
-            - 新模型仓位单（record_role=position）：展示从关联买入单/卖出单派生的汇总
-            - 旧模型（无 role）：展示合并后的持仓/卖出明细
-            买入单/卖出单本身不显示此面板（各自展示自己的决策字段） */}
-        {template.id === 'investment_checklist' && (!recordRole || recordRole === 'position') && (
+        {/* 投资清单：持仓明细面板（仓位单展示同代码所有买入/卖出明细，表格形式）
+            数据由 syncPositionFromLinked 从关联买入/卖出单派生 */}
+        {template.id === 'investment_checklist' && recordRole === 'position' && (
             <InvestmentMergePanel
                 stockCode={(watch('buy_company_name') as string) || ''}
                 mergedBuyLots={watch('merged_buy_lots') as MergeLot[] | undefined}
@@ -1111,14 +998,6 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                 totalSellQty={watch('merged_total_sell_qty') as string | number | undefined}
                 soldOut={watch('sold_out') as boolean | undefined}
                 lastSellDate={watch('last_sell_date') as string | undefined}
-                reviewed={sellReviewed}
-                onUndoLastSell={!recordRole && hasSellLots ? handleUndoLastSell : undefined}
-                mergedSnapshots={watch('merged_snapshots') as MergedSnapshot[] | undefined}
-                emptyText={
-                  !recordRole && currentPhaseIndex >= 1 && currentPhaseIndex < PHASE_REVIEW
-                      ? '📌 同一代码的买入记录会自动汇总展示（平均买入价 + 逐笔明细）；部分卖出后剩余持仓可继续追加买入；全部卖出后按冷静期设置开放复盘'
-                      : undefined
-                }
             />
         )}
 
@@ -1180,8 +1059,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             const timeLockInfo = sectionPhase ? getPhaseTimeLockInfo(
                 sectionPhase,
                 getValues(),
-                initialData ? (initialData._createdAt as string) : undefined,
-                { skipCooldown }
+                initialData ? (initialData._createdAt as string) : undefined
             ) : null;
 
             if (timeLockInfo) {
@@ -1290,28 +1168,28 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           </div>
                       )}
 
-                      {/* 投资清单：卖出阶段内联持仓上下文（加权成本/剩余持仓/实时盈亏） */}
+                      {/* 投资清单：卖出阶段内联持仓上下文（平均成本/剩余持仓/实时盈亏，数据来自关联仓位单） */}
                       {template.id === 'investment_checklist' && activeSection.id === 'when_selling' && (
                           <SellContextInline
-                              buyPrice={watch('buy_price')}
-                              totalQty={watch('merged_total_qty') as string | number | undefined}
-                              sellQty={watch('merged_total_sell_qty') as string | number | undefined}
+                              buyPrice={linkedPosition?.data.buy_price as string | number | undefined}
+                              totalQty={linkedPosition?.data.merged_total_qty as string | number | undefined}
+                              sellQty={linkedPosition?.data.merged_total_sell_qty as string | number | undefined}
                               sellPrice={watch('sell_exit_price')}
                               sellQuantity={watch('sell_quantity')}
-                              currency={(watch('buy_currency') as string) || 'CNY'}
+                              currency={(linkedPosition?.data.buy_currency as string) || 'CNY'}
                           />
                       )}
 
-                      {/* 投资清单：卖出复盘量化对比（目标价/止损/持有周期 vs 实际） */}
+                      {/* 投资清单：卖出复盘量化对比（目标价/止损/持有周期 vs 实际，买入预期来自关联仓位单） */}
                       {template.id === 'investment_checklist' && activeSection.id === 'sell_review' && (
                           <ReviewContextInline
-                              buyPrice={watch('buy_price')}
+                              buyPrice={linkedPosition?.data.buy_price as string | number | undefined}
                               sellPrice={watch('sell_exit_price')}
-                              targetPrice={watch('buy_target_price_num')}
-                              stopLoss={watch('buy_stop_loss_price')}
-                              buyDate={watch('buy_date') as string | undefined}
-                              lastSellDate={watch('last_sell_date') as string | undefined}
-                              timeframe={watch('buy_timeframe') as string | undefined}
+                              targetPrice={linkedPosition?.data.buy_target_price_num as string | number | undefined}
+                              stopLoss={linkedPosition?.data.buy_stop_loss_price as string | number | undefined}
+                              buyDate={linkedPosition?.data.buy_date as string | undefined}
+                              lastSellDate={watch('sell_date') as string | undefined}
+                              timeframe={linkedPosition?.data.buy_timeframe as string | undefined}
                           />
                       )}
 

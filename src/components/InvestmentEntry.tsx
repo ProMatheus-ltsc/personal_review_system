@@ -30,11 +30,12 @@ import {
 /** 热门股票（无历史持仓时也提供快速选项） */
 const HOT_STOCKS = ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', '00700', '600519', '000858', '300750'];
 
-/** 冷静期场景配置项描述 */
+/** 等待期场景配置项描述 */
 const COOLDOWN_ITEMS = [
   { key: COOLDOWN_SETTINGS.BUY, label: '买入复盘等待期', hint: '买入后，等待多久才能复盘买入决策' },
   { key: COOLDOWN_SETTINGS.SELL, label: '卖出复盘等待期', hint: '卖出后，等待多久才能复盘卖出决策' },
   { key: COOLDOWN_SETTINGS.POSITION, label: '投资周期复盘等待期', hint: '全部卖出后，等待多久才能复盘整个投资过程' },
+  { key: COOLDOWN_SETTINGS.DECISION, label: '决策日志长期复盘等待期', hint: '决策完成后，等待多久才能复盘决策结果' },
 ] as const;
 
 export default function InvestmentEntry() {
@@ -46,15 +47,16 @@ export default function InvestmentEntry() {
   const [creating, setCreating] = useState<null | 'buy' | 'sell'>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 冷静期设置（按账户存储）
+  // 等待期设置（按账户存储）
   const [cooldownInputs, setCooldownInputs] = useState<Record<string, string>>({
     [COOLDOWN_SETTINGS.BUY]: String(DEFAULT_COOLDOWN_DAYS),
     [COOLDOWN_SETTINGS.SELL]: String(DEFAULT_COOLDOWN_DAYS),
     [COOLDOWN_SETTINGS.POSITION]: String(DEFAULT_COOLDOWN_DAYS),
+    [COOLDOWN_SETTINGS.DECISION]: String(DEFAULT_COOLDOWN_DAYS),
   });
   const [cooldownSaved, setCooldownSaved] = useState(false);
 
-  // 加载全部投资清单记录（用于查仓位与历史持仓快速选择）
+  // 加载全部投资清单记录（用于查持仓与历史持仓快速选择）
   const loadRecords = useCallback(async () => {
     const records = await getAllRecords('investment_checklist');
     setAllRecords(records);
@@ -64,17 +66,19 @@ export default function InvestmentEntry() {
   // 打开页面即加载历史持仓（快速选择前置到输入之前）
   useEffect(() => {
     loadRecords();
-    // 读取冷静期配置
+    // 读取等待期配置
     (async () => {
-      const [buy, sell, pos] = await Promise.all([
+      const [buy, sell, pos, decision] = await Promise.all([
         getSetting(COOLDOWN_SETTINGS.BUY),
         getSetting(COOLDOWN_SETTINGS.SELL),
         getSetting(COOLDOWN_SETTINGS.POSITION),
+        getSetting(COOLDOWN_SETTINGS.DECISION),
       ]);
       setCooldownInputs({
         [COOLDOWN_SETTINGS.BUY]: String(buy ?? DEFAULT_COOLDOWN_DAYS),
         [COOLDOWN_SETTINGS.SELL]: String(sell ?? DEFAULT_COOLDOWN_DAYS),
         [COOLDOWN_SETTINGS.POSITION]: String(pos ?? DEFAULT_COOLDOWN_DAYS),
+        [COOLDOWN_SETTINGS.DECISION]: String(decision ?? DEFAULT_COOLDOWN_DAYS),
       });
     })();
   }, [loadRecords]);
