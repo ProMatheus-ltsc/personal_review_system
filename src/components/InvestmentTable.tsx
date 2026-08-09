@@ -56,9 +56,11 @@ export default function InvestmentTable({ records, onSelect }: InvestmentTablePr
     return { label: '持有中', cls: 'bg-amber-100 text-amber-700' };
   };
 
+  /** 币种符号：USD 用 $，其余（CNY 等）用 ¥ */
   const currencySymbol = (r: FormRecord): string =>
     r.data.buy_currency === 'USD' ? '$' : '¥';
 
+  /** 渲染盈亏百分比：遵循中国习惯红涨绿跌；空值/非法显示占位符 */
   const renderPnl = (r: FormRecord) => {
     const raw = r.data.sell_pnl_percent;
     if (raw === undefined || raw === null || String(raw).trim() === '') {

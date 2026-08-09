@@ -566,18 +566,22 @@ export function syncPositionReview(data: Record<string, unknown>): Record<string
   return result;
 }
 
+/** 阶段索引：0 买入 / 1 持有 / 3 复盘（投资检查清单模板） */
 const PHASE_BUYING = 0;
 const PHASE_HOLDING = 1;
 const PHASE_REVIEW = 3;
 
+/** 投资检查清单模板的 phases 配置引用（供阶段计算使用） */
 const phases = investmentChecklistTemplate.phases!;
 
+/** 数值转换：空值/非法值返回 undefined（表单字段可能存储为字符串/数字/空） */
 function toNum(v: unknown): number | undefined {
   if (v === undefined || v === null || String(v).trim() === '') return undefined;
   const n = parseFloat(String(v));
   return isNaN(n) ? undefined : n;
 }
 
+/** 加权平均价格：Σ(price × qty) / Σ(qty)，忽略非正数量；无有效批次时返回 undefined */
 function weightedAvg(lots: { price: number; qty: number }[]): number | undefined {
   let qty = 0;
   let cost = 0;
@@ -589,6 +593,7 @@ function weightedAvg(lots: { price: number; qty: number }[]): number | undefined
   return qty > 0 ? cost / qty : undefined;
 }
 
+/** 判断单据是否已填写卖出价（顶层卖出字段非空 = 已发生卖出） */
 function isSellFilled(r: FormRecord): boolean {
   return !isFieldEmpty(r.data.sell_exit_price);
 }
@@ -622,6 +627,7 @@ function collectBuyLots(r: FormRecord, source: string): { date?: string; price: 
   return lots;
 }
 
+/** 收集被吸收（合并）记录的完整快照：保留其标题与全部填写数据，供回看买入细节 */
 function appendSnapshots(currentData: Record<string, unknown>, absorbees: FormRecord[]): unknown[] {
   const snapshots = Array.isArray(currentData.merged_snapshots) ? [...(currentData.merged_snapshots as unknown[])] : [];
   absorbees.forEach((r) => {

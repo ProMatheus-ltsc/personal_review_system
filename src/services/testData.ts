@@ -16,6 +16,7 @@ import { saveRecord, setSetting, getSetting } from '@/services/db';
 import type { FormRecord } from '@/types';
 import { ensureTradesInitialized, syncPositionReview, RECORD_ROLE } from '@/services/investmentMerge';
 
+/** 测试数据初始化标记（settings key）：已初始化则跳过，保证幂等 */
 const SEED_MARK_KEY = 'test_account_initialized';
 
 /** 相对今天的日期（YYYY-MM-DD） */

@@ -385,6 +385,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     }
   }, [initialTabSet, phases, initialData, currentPhaseIndex, template.id, setValue]);
 
+  /** 构建 FormRecord：从当前表单值组装记录（保留初始 createdAt，更新 updatedAt） */
   const buildRecord = useCallback(
       (status: 'draft' | 'completed'): FormRecord => {
         const now = new Date().toISOString();
@@ -681,6 +682,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       [phases, performSave, currentPhaseIndex, isSectionReadOnly, activeTab, visitedMaxPhase, readonlyToastShown, showToast]
   );
 
+  /** 手动保存草稿：调用 performSave 并提示（底部「保存草稿」按钮） */
   const handleDraftSave = async () => {
     const record = await performSave('draft');
     if (record) {
@@ -689,6 +691,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     }
   };
 
+  /** 完成提交：先校验全模板必填字段，失败跳转到首个错误 section，通过则标记完成 */
   const handleComplete = async () => {
     const formData = getValues();
     const { valid, errors } = validateRequiredFields(template, formData);
@@ -782,12 +785,14 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     }
   }, [buildRecord, syncMergedData, showToast]);
 
+  /** 下一步：切换到后一个 section tab（触发保存） */
   const goNext = () => {
     if (activeTab < template.sections.length - 1) {
       handleTabChange(activeTab + 1);
     }
   };
 
+  /** 上一步：切换到前一个 section tab（触发保存） */
   const goPrev = () => {
     if (activeTab > 0) {
       handleTabChange(activeTab - 1);
@@ -843,6 +848,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     return set;
   }, [validationErrors]);
 
+  /**
+   * 渲染单个字段：合并 RHF 校验错误与自定义验证错误，处理条件字段/计算字段/
+   * 动态选项/条件提示，返回带 key 的受控或非受控表单控件
+   */
   const renderFieldItem = (field: FormField) => {
     // Check for validation errors from our custom validation
     const validationError = validationErrors.find((err) => err.fieldId === field.id);

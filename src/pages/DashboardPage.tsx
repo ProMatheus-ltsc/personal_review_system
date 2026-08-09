@@ -75,6 +75,7 @@ export default function DashboardPage() {
     setIsFirstVisit(false);
   };
 
+  /** 备份提醒触发条件：记录数达标且满足「从未备份 / 距上次备份新增≥10条 / 距上次备份≥30天」任一 */
   const shouldShowBackupReminder = useMemo(() => {
     if (!backupCheckDone) return false;
     if (records.length < 10) return false;
@@ -108,6 +109,7 @@ export default function DashboardPage() {
     return { streak, weekCount, monthCount };
   }, [records]);
 
+  /** 各模板使用统计：记录数 + 最近编辑时间（用于模板卡片展示） */
   const templateStats = useMemo(() => {
     return templates.map((template) => {
       const templateRecords = records.filter(
@@ -130,6 +132,7 @@ export default function DashboardPage() {
     });
   }, [records]);
 
+  /** 最近编辑的 5 条记录（按 updatedAt 降序，用于快捷继续编辑） */
   const recentRecords = useMemo(() => {
     return [...records]
       .sort(

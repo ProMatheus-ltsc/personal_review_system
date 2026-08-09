@@ -69,6 +69,7 @@ export interface DecisionLogStats {
   decisionTypes: { name: string; count: number }[];
 }
 
+/** 计算决策日志统计：决策数、后悔率、预期准确率、认知偏见、改进焦点与类型分布 */
 export function calcDecisionLogStats(records: FormRecord[]): DecisionLogStats {
   const completedRecords = records.filter((r) => r.status === 'completed');
 
@@ -177,6 +178,7 @@ export interface DailyReviewStats {
   energyDistribution: { name: string; count: number }[];
 }
 
+/** 计算日复盘统计：复盘天数、连续天数、情绪与精力分布 */
 export function calcDailyReviewStats(records: FormRecord[]): DailyReviewStats {
   const completedRecords = records.filter((r) => r.status === 'completed');
 
@@ -258,6 +260,7 @@ export interface WeeklyReviewStats {
   goalsTotal: number;
 }
 
+/** 计算周复盘统计：完成周数、平均目标达成率、目标完成进度 */
 export function calcWeeklyReviewStats(records: FormRecord[]): WeeklyReviewStats {
   const completedRecords = records.filter((r) => r.status === 'completed');
 
@@ -319,6 +322,7 @@ interface SellBatchLike {
   reason?: string;
 }
 
+/** 读取一条投资单据的卖出批次：合并单据优先 merged_sell_lots，否则顶层卖出字段视为一笔批次 */
 function readSellBatches(r: FormRecord): SellBatchLike[] {
   const merged = r.data['merged_sell_lots'];
   if (Array.isArray(merged) && merged.length > 0) return merged as unknown as SellBatchLike[];
@@ -362,6 +366,7 @@ export interface InvestmentStats {
   profitDistribution: { name: string; count: number }[];
 }
 
+/** 计算投资检查清单总体统计：卖出批次、胜率、平均持有天数、累计/平均盈亏、盈亏分布 */
 export function calcInvestmentStats(records: FormRecord[]): InvestmentStats {
   let totalSellBatches = 0;
   const closed: { pnlPercent: number | null; holdDays: number | null }[] = [];
@@ -526,6 +531,7 @@ function timeframeToDays(tf: string): { min: number; max: number } | null {
   }
 }
 
+/** 计算逐笔交易明细：每个投资周期一组，含加权买卖价、盈亏、持有天数、按时间排序的逐笔买卖子行 */
 export function calcTradeDetails(records: FormRecord[]): TradeDetail[] {
   return records.map((r) => {
     const code = String(r.data['buy_company_name'] ?? '').trim();
@@ -763,6 +769,7 @@ export interface EmotionStats {
   regulationEffectiveness: { name: string; count: number }[];
 }
 
+/** 计算情绪觉察统计：记录数、情绪分布、触发因素、调节效果分布 */
 export function calcEmotionStats(records: FormRecord[]): EmotionStats {
   const completedRecords = records.filter((r) => r.status === 'completed');
 

@@ -19,6 +19,11 @@ import ExportButtons from '@/components/ExportButtons';
 import { useRecord } from '@/hooks/useDB';
 import type { FormRecord } from '@/types';
 
+/**
+ * FormPage — 表单填写/编辑页（组件实现）
+ * 投资检查清单新建模式（无 recordId）走 InvestmentEntry 代码中心入口；
+ * 其余模板/编辑模式直接渲染 FormRenderer。
+ */
 const FormPage: React.FC = () => {
   const { templateId, recordId } = useParams<{
     templateId: string;

@@ -80,6 +80,7 @@ export default function HistoryPage() {
     return filterInvestmentRecords(investmentRecords, filter).length;
   }, [activeTemplateId, investmentRecords, exportCode, exportDateFrom, exportDateTo]);
 
+  /** 导出投资清单 JSON：按当前过滤条件序列化并触发浏览器下载（无匹配时提示） */
   const handleExport = useCallback(async () => {
     if (exportMatchCount === 0) {
       setExportResult('没有符合条件的记录可导出');

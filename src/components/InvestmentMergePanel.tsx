@@ -51,6 +51,7 @@ interface InvestmentMergePanelProps {
   mergedSnapshots?: MergedSnapshot[];
 }
 
+/** 买入批次的来源标签配色：当前记录（indigo）/ 历史记录（gray） */
 const statusColor: Record<string, string> = {
   当前记录: 'bg-indigo-100 text-indigo-600',
   历史记录: 'bg-gray-100 text-gray-600',
