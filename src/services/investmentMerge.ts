@@ -601,6 +601,31 @@ export function getLinkedRecords(
 }
 
 /**
+ * 计算分批买入的「加权平均买入日期」（YYYY-MM-DD）。
+ * 与加权平均买入价同思路：Σ(qty × 日期天数) / Σ(qty)，避免多笔买入时
+ * 只取首笔或末笔买入日期导致的持仓周期偏差。
+ * 仅统计有有效日期且数量 > 0 的批次；无有效批次时返回 undefined。
+ */
+export function weightedAvgBuyDate(
+  buyLots: { date?: string; qty?: string | number }[]
+): string | undefined {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  let qtySum = 0;
+  let daySum = 0;
+  buyLots.forEach((lot) => {
+    if (!lot.date || String(lot.date).trim() === '') return;
+    const q = toNum(lot.qty);
+    const t = new Date(String(lot.date).slice(0, 10)).getTime();
+    if (q === undefined || q <= 0 || isNaN(t)) return;
+    qtySum += q;
+    daySum += q * (t / DAY_MS);
+  });
+  if (qtySum <= 0) return undefined;
+  return new Date(Math.round(daySum / qtySum) * DAY_MS).toISOString().slice(0, 10);
+}
+
+
+/**
  * 从关联的买入单/卖出单同步仓位单汇总数据：
  * - merged_buy_lots（逐笔买入明细，来自买入单的买入前段字段）
  * - merged_sell_lots（逐笔卖出明细，来自卖出单的卖出段字段）

@@ -39,6 +39,7 @@ import {
   syncPositionFromLinked,
   getLinkedRecords,
   ensurePositionForBuyRecord,
+  weightedAvgBuyDate,
   type InvestmentTrade,
 } from '@/services/investmentMerge';
 
@@ -483,6 +484,29 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       cancelled = true;
     };
   }, [template.id, positionIdWatch]);
+
+  // 卖出单：注入关联仓位单的「加权平均买入日期」+「平均买入价」为派生字段。
+  // 新模型卖出单本身不填写买入信息，但盈亏%（sell_pnl_percent）与持仓周期（sell_hold_days）
+  // 两个 computed 字段依赖 buy_price/buy_date —— 注入后即可自动计算并随记录持久化，
+  // 持仓周期按加权平均买入时间（Σ数量×买入日期 / Σ数量，与加权平均买入价同思路）计算。
+  // 仅当卖出单尚无买入上下文时注入（幂等，不覆盖已有值）。
+  useEffect(() => {
+    if (template.id !== 'investment_checklist' || recordRole !== 'sell' || !linkedPosition) return;
+    const buyLots = Array.isArray(linkedPosition.data.merged_buy_lots)
+        ? (linkedPosition.data.merged_buy_lots as { date?: string; qty?: string | number }[])
+        : [];
+    const avgDate = weightedAvgBuyDate(buyLots);
+    const avgPrice = linkedPosition.data.buy_price as string | number | undefined;
+    if (avgDate && isFieldEmpty(getValues('buy_date'))) {
+      setValue('buy_date', avgDate, { shouldDirty: false });
+    }
+    if (
+        avgPrice !== undefined && avgPrice !== null && String(avgPrice).trim() !== '' &&
+        isFieldEmpty(getValues('buy_price'))
+    ) {
+      setValue('buy_price', String(avgPrice), { shouldDirty: false });
+    }
+  }, [template.id, recordRole, linkedPosition, getValues, setValue]);
 
   const performSave = useCallback(
       async (status: 'draft' | 'completed', { skipMerge = false }: { skipMerge?: boolean } = {}) => {

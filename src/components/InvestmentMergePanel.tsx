@@ -135,7 +135,7 @@ export default function InvestmentMergePanel({
         )}
       </div>
 
-      {/* 买入合并明细 */}
+      {/* 买入明细 */}
       {hasBuy && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
@@ -146,13 +146,14 @@ export default function InvestmentMergePanel({
             )}
           </div>
           <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-            <table className="w-full text-xs min-w-[420px]">
+            <table className="w-full text-xs min-w-[520px]">
               <thead>
                 <tr className="bg-gray-50 text-left text-gray-500">
                   <th className="px-3 py-2 font-medium">来源</th>
                   <th className="px-3 py-2 font-medium">买入日期</th>
                   <th className="px-3 py-2 font-medium">买入价</th>
                   <th className="px-3 py-2 font-medium">数量</th>
+                  <th className="px-3 py-2 font-medium">买入逻辑</th>
                 </tr>
               </thead>
               <tbody>
@@ -170,6 +171,9 @@ export default function InvestmentMergePanel({
                     <td className="px-3 py-1.5 text-gray-600">{l.date || '-'}</td>
                     <td className="px-3 py-1.5 text-gray-600">{fmt(l.price)}</td>
                     <td className="px-3 py-1.5 text-gray-600">{fmt(l.qty, 0)}</td>
+                    <td className="px-3 py-1.5 text-gray-500 truncate max-w-[200px]" title={l.reason || ''}>
+                      {l.reason || '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
