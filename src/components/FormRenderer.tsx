@@ -31,7 +31,17 @@ import RepeatableSection from './RepeatableSection';
 import InvestmentMergePanel, { type MergeLot, type MergedSnapshot } from './InvestmentMergePanel';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
-import { mergeSameCodeBuys, applySellBatch, undoLastSellBatch, PHASE_REVIEW } from '@/services/investmentMerge';
+import {
+  mergeSameCodeBuys,
+  applySellBatch,
+  undoLastSellBatch,
+  ensureTradesInitialized,
+  syncReviewsFromEntries,
+  syncPositionReview,
+  isTradeReviewedInEntries,
+  PHASE_REVIEW,
+  type InvestmentTrade,
+} from '@/services/investmentMerge';
 
 /**
  * 解析模板字段中的 magic string defaultValue 为实际值
@@ -111,7 +121,14 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // Build default values from template fields
   const computedDefaults = useCallback(() => {
-    if (initialData) return initialData;
+    if (initialData) {
+      // 投资检查清单：幂等初始化 Trade + Review 三层结构（兼容旧单据）
+      if (template.id === 'investment_checklist') {
+        const initialized = ensureTradesInitialized(initialData);
+        return { ...initialData, ...initialized };
+      }
+      return initialData;
+    }
     const defaults: Record<string, any> = {};
     const now = new Date();
     template.sections.forEach((s) => {
@@ -409,6 +426,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
               'merged_snapshots',
               'parent_position_id',
               '_sell_batch_id',
+              // Trade + Review 三层模型字段
+              'merged_trades',
+              'merged_reviews',
+              'merged_position_review',
             ] as const
         ).forEach((k) => {
           if (k in data) setValue(k, data[k], { shouldDirty: false });
@@ -428,6 +449,21 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           // 已完成记录被重新编辑并自动保存时保持 completed 状态，避免被草稿保存降级
           const finalStatus: 'draft' | 'completed' =
               status === 'completed' || recordStatus === 'completed' ? 'completed' : 'draft';
+
+          // 投资检查清单：保存前同步 sell_review_entries → merged_reviews（Trade Review 层）
+          // + position_review_* → merged_position_review（Position Review 层）
+          if (template.id === 'investment_checklist') {
+            const currentFormData = getValues();
+            let synced = syncReviewsFromEntries(currentFormData);
+            synced = syncPositionReview(synced);
+            if (Array.isArray(synced.merged_reviews)) {
+              setValue('merged_reviews', synced.merged_reviews, { shouldDirty: false });
+            }
+            if (synced.merged_position_review !== undefined) {
+              setValue('merged_position_review', synced.merged_position_review, { shouldDirty: false });
+            }
+          }
+
           const record = buildRecord(finalStatus);
           await save(record);
 
@@ -691,7 +727,18 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     }
   };
 
+  // 投资清单：是否已清仓（控制投资周期复盘 tab 的显示）— 提前声明，供后续 useEffect 使用
+  const soldOutWatch = watch('sold_out') as boolean | undefined;
+
   const activeSection = template.sections[activeTab];
+
+  // 投资清单：清仓撤销后 Position Review tab 消失 → 自动切回卖出复盘 tab
+  useEffect(() => {
+    if (template.id === 'investment_checklist' && activeSection?.id === 'position_review' && !soldOutWatch) {
+      const reviewSectionIdx = template.sections.findIndex((s) => s.id === 'sell_review');
+      if (reviewSectionIdx >= 0) setActiveTab(reviewSectionIdx);
+    }
+  }, [template.id, template.sections, activeSection, soldOutWatch]);
 
   // Separate fields by priority
   const mainFields = activeSection.fields.filter(
@@ -798,11 +845,38 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // For annual review: get the year value for the sidebar
   const annualYearValue = template.id === 'annual_review' ? (watch('annual_year') as string || String(new Date().getFullYear())) : '';
 
-  // 投资清单：是否已复盘（有卖出复盘核心教训）→ 控制撤销卖出按钮
+  // 投资清单：是否已复盘（Trade 层优先 → entries 回退）→ 控制撤销卖出按钮
   const sellReviewEntries = watch('sell_review_entries') as Record<string, unknown>[] | undefined;
-  const sellReviewed = Array.isArray(sellReviewEntries) && sellReviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
+  const mergedTradesWatch = watch('merged_trades') as InvestmentTrade[] | undefined;
+  const mergedReviewsWatch = watch('merged_reviews') as Record<string, unknown>[] | undefined;
+  const sellReviewed = (() => {
+    // Trade 层优先：检查 merged_reviews 中是否有 lesson 非空
+    if (Array.isArray(mergedReviewsWatch) && mergedReviewsWatch.some((rv) => !isFieldEmpty(rv.lesson))) {
+      return true;
+    }
+    // 回退到表单 entries
+    return isTradeReviewedInEntries(sellReviewEntries || []);
+  })();
   const mergedSellLotsWatch = watch('merged_sell_lots') as unknown[] | undefined;
   const hasSellLots = Array.isArray(mergedSellLotsWatch) && mergedSellLotsWatch.length > 0;
+
+  // 投资清单：SELL trades 选项（用于 sell_review_trade_id select 动态注入）
+  // 每笔卖出交易生成一个选项，格式：卖出日期 · 价格 · 数量
+  const sellTradeOptions = useMemo(() => {
+    if (template.id !== 'investment_checklist' || !Array.isArray(mergedTradesWatch)) return undefined;
+    const sellTrades = mergedTradesWatch.filter((t) => t.type === 'SELL');
+    if (sellTrades.length === 0) return undefined;
+    return sellTrades.map((t) => ({
+      value: t.id,
+      label: `${t.date || '未填日期'} · ${t.price ?? '-'} · ${t.qty ?? '-'}股${t.reason ? `（${t.reason}）` : ''}`,
+    }));
+  }, [template.id, mergedTradesWatch]);
+
+  // 投资清单：可重复段字段选项覆盖（sell_review_trade_id ← SELL trades）
+  const repeatableFieldOptions = useMemo(() => {
+    if (!sellTradeOptions) return undefined;
+    return { sell_review_trade_id: sellTradeOptions };
+  }, [sellTradeOptions]);
 
   // Templates that support smart reference sidebar
   const SIDEBAR_TEMPLATES = ['weekly_review', 'monthly_review', 'annual_review'];
@@ -902,6 +976,10 @@ const FormRenderer: React.FC<FormRendererProps> = ({
               aria-label="表单部分"
           >
             {template.sections.map((section, index) => {
+              // 投资清单：投资周期复盘 tab 仅在清仓后显示
+              if (template.id === 'investment_checklist' && section.id === 'position_review' && !soldOutWatch) {
+                return null;
+              }
               const hasErrors = sectionsWithErrors.has(index);
               const locked = isSectionLocked(index);
               const readOnly = isSectionReadOnly(index);
@@ -1040,6 +1118,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           entries={(watch(`${activeSection.id}_entries`) as Record<string, unknown>[] | undefined) || []}
                           onChange={(newEntries) => setValue(`${activeSection.id}_entries`, newEntries, { shouldDirty: true })}
                           templateId={template.id}
+                          fieldOptionsOverride={repeatableFieldOptions}
                       />
                     </div>
                 ) : (
@@ -1080,6 +1159,41 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                               timeframe={watch('buy_timeframe') as string | undefined}
                           />
                       )}
+
+                      {/* 投资清单：投资周期复盘 — 整体投资概览 */}
+                      {template.id === 'investment_checklist' && activeSection.id === 'position_review' && (() => {
+                        const buyPrice = parseFloat(String(watch('buy_price') ?? ''));
+                        const sellPrice = parseFloat(String(watch('sell_exit_price') ?? ''));
+                        const totalQty = parseFloat(String(watch('merged_total_qty') ?? watch('buy_quantity') ?? ''));
+                        const pnlPercent = !isNaN(buyPrice) && !isNaN(sellPrice) && buyPrice > 0
+                          ? ((sellPrice - buyPrice) / buyPrice) * 100 : null;
+                        const buyDate = watch('buy_date') as string | undefined;
+                        const lastSellDate = watch('last_sell_date') as string | undefined;
+                        let holdDays: number | null = null;
+                        if (buyDate && lastSellDate) {
+                          const s = new Date(buyDate), e = new Date(lastSellDate);
+                          if (!isNaN(s.getTime()) && !isNaN(e.getTime())) holdDays = Math.round((e.getTime() - s.getTime()) / 86400000);
+                        }
+                        const trades = Array.isArray(mergedTradesWatch) ? mergedTradesWatch : [];
+                        const buyCount = trades.filter((t) => t.type === 'BUY').length;
+                        const sellCount = trades.filter((t) => t.type === 'SELL').length;
+                        const pnlColor = pnlPercent === null ? '' : pnlPercent > 0 ? 'text-red-600' : pnlPercent < 0 ? 'text-green-600' : 'text-gray-700';
+                        return (
+                          <div className="mb-4 bg-violet-50/60 border border-violet-200 rounded-lg p-3 text-xs text-gray-600">
+                            <p className="text-xs font-semibold text-violet-800 mb-2">📊 投资周期概览</p>
+                            <div className="flex flex-wrap gap-x-5 gap-y-1">
+                              <span>买入价 <b className="text-gray-900">{!isNaN(buyPrice) ? buyPrice.toFixed(2) : '-'}</b></span>
+                              <span>卖出价 <b className="text-gray-900">{!isNaN(sellPrice) ? sellPrice.toFixed(2) : '-'}</b></span>
+                              {pnlPercent !== null && (
+                                <span>总盈亏 <b className={pnlColor}>{pnlPercent > 0 ? '+' : ''}{pnlPercent.toFixed(2)}%</b></span>
+                              )}
+                              {holdDays !== null && <span>持有 <b className="text-gray-900">{holdDays} 天</b></span>}
+                              {totalQty > 0 && <span>总量 <b className="text-gray-900">{totalQty}</b></span>}
+                              <span>交易 <b className="text-gray-900">{buyCount}</b> 买 / <b className="text-gray-900">{sellCount}</b> 卖</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Required + Recommended fields */}
                       {mainFields.map((field) => renderFieldItem(field))}

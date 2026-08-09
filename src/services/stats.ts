@@ -7,6 +7,8 @@
 import { FormRecord, TemplateId } from '@/types';
 import { getAllRecords } from '@/services/db';
 import { startOfMonth, subMonths, isAfter } from 'date-fns';
+import { ensureTradesInitialized, readTrades, readReviews } from '@/services/investmentMerge';
+import { isFieldEmpty } from '@/utils/formValidation';
 
 export type TimeRange = 'month' | 'quarter' | 'all';
 
@@ -632,6 +634,113 @@ export function calcTradeDetails(records: FormRecord[]): TradeDetail[] {
 
     return { id: r.id, code, buyPrice, sellPrice, pnlPercent, pnlAmount, holdDays, riskReward: rr, timeframeJudge, expectedTimeframe, lots, status };
   });
+}
+
+// ============================================================
+// 卖出交易质量统计（基于 Trade + Review 三层模型）
+// ============================================================
+
+export interface SellQualityStats {
+  /** 卖出次数（SELL Trade 总数） */
+  sellCount: number;
+  /** 已复盘卖出数（Review 层 lesson 非空） */
+  reviewedCount: number;
+  /** 卖出胜率（盈利卖出 / 总卖出，按笔计） */
+  sellWinRate: number | null;
+  /** 过早卖出数（卖出后走势 = 继续大涨/继续小涨） */
+  prematureSellCount: number;
+  /** 过早卖出占比 */
+  prematureSellRate: number | null;
+  /** 平均每笔卖出盈亏% */
+  avgPnlPerSell: number | null;
+  /** 卖出原因分布 */
+  sellReasonDistribution: { name: string; count: number }[];
+  /** 卖出后走势分布 */
+  postSellTrendDistribution: { name: string; count: number }[];
+}
+
+/**
+ * 计算卖出交易质量统计。
+ * 基于 merged_trades + merged_reviews（旧单据经 ensureTradesInitialized 纯计算兼容）。
+ * 统计粒度为每笔 SELL Trade（而非每份单据），支持分笔卖出独立复盘分析。
+ */
+export function calcSellQualityStats(records: FormRecord[]): SellQualityStats {
+  let sellCount = 0;
+  let reviewedCount = 0;
+  let profitableSells = 0;
+  let prematureSellCount = 0;
+  let pnlSum = 0;
+  let pnlCount = 0;
+  const reasonCount: Record<string, number> = {};
+  const trendCount: Record<string, number> = {};
+
+  records.forEach((r) => {
+    // 幂等初始化三层结构（兼容旧单据）
+    const initialized = ensureTradesInitialized(r.data);
+    const trades = readTrades({ ...r, data: initialized });
+    const reviews = readReviews({ ...r, data: initialized });
+    const buyPrice = toNum(r.data['buy_price']); // 加权买入价
+
+    const sellTrades = trades.filter((t) => t.type === 'SELL');
+    sellTrades.forEach((trade) => {
+      sellCount++;
+
+      // 已复盘？
+      const review = reviews.find((rv) => rv.trade_id === trade.id);
+      if (review && !isFieldEmpty(review.lesson)) reviewedCount++;
+
+      // 盈亏（按笔：卖出价 vs 加权买入价）
+      if (buyPrice !== undefined && buyPrice > 0 && trade.price > 0) {
+        const pnl = ((trade.price - buyPrice) / buyPrice) * 100;
+        pnlSum += pnl;
+        pnlCount++;
+        if (pnl > 0) profitableSells++;
+      }
+
+      // 过早卖出（卖出后继续上涨）
+      const trend = review?.post_sell_trend;
+      if (trend === '继续大涨' || trend === '继续小涨') {
+        prematureSellCount++;
+      }
+
+      // 卖出原因分布
+      const reason = trade.reason || '未填写';
+      reasonCount[reason] = (reasonCount[reason] || 0) + 1;
+
+      // 卖出后走势分布
+      if (trend) {
+        trendCount[trend] = (trendCount[trend] || 0) + 1;
+      }
+    });
+  });
+
+  const sellWinRate = sellCount > 0 && profitableSells > 0
+    ? Math.round((profitableSells / sellCount) * 100)
+    : null;
+  const prematureSellRate = sellCount > 0 && prematureSellCount > 0
+    ? Math.round((prematureSellCount / sellCount) * 100)
+    : null;
+  const avgPnlPerSell = pnlCount > 0
+    ? Math.round((pnlSum / pnlCount) * 100) / 100
+    : null;
+
+  const sellReasonDistribution = Object.entries(reasonCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+  const postSellTrendDistribution = Object.entries(trendCount)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    sellCount,
+    reviewedCount,
+    sellWinRate,
+    prematureSellCount,
+    prematureSellRate,
+    avgPnlPerSell,
+    sellReasonDistribution,
+    postSellTrendDistribution,
+  };
 }
 
 // ============================================================

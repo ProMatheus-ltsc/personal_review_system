@@ -7,6 +7,7 @@
  */
 import type { FormRecord } from '@/types';
 import { isFieldEmpty } from '@/utils/formValidation';
+import { readReviews } from '@/services/investmentMerge';
 import clsx from 'clsx';
 
 interface InvestmentTableProps {
@@ -16,7 +17,11 @@ interface InvestmentTableProps {
 
 export default function InvestmentTable({ records, onSelect }: InvestmentTableProps) {
   const getStatus = (r: FormRecord): { label: string; cls: string } => {
-    // 已复盘：卖出复盘可重复段中存在含核心教训的记录
+    // 已复盘：Trade 层优先（merged_reviews 有 lesson 非空），回退到 entries
+    const reviews = readReviews(r);
+    if (reviews.some((rv) => !isFieldEmpty(rv.lesson))) {
+      return { label: '已复盘', cls: 'bg-green-100 text-green-700' };
+    }
     const entries = r.data.sell_review_entries as Record<string, unknown>[] | undefined;
     if (Array.isArray(entries) && entries.some((e) => !isFieldEmpty(e.sell_lesson))) {
       return { label: '已复盘', cls: 'bg-green-100 text-green-700' };

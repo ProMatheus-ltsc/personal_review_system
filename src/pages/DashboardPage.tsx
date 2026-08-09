@@ -19,6 +19,7 @@ import TemplateCard from '@/components/TemplateCard';
 import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
 import { isFieldEmpty } from '@/utils/formValidation';
+import { findPendingReviewTrades, ensureTradesInitialized } from '@/services/investmentMerge';
 import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, PositionOverview, type ReviewItem, type PositionItem } from '@/components/dashboard';
 
 /**
@@ -157,7 +158,7 @@ export default function DashboardPage() {
       .filter((p) => p.remainingQty > 0);
   }, [records]);
 
-  // 复盘提醒：投资检查清单按卖出日期、决策日志按完成时间，过 30 天冷静期后提醒复盘
+  // 复盘提醒：投资检查清单按每笔卖出（Trade 层优先）独立提醒，决策日志按完成时间
   const { readyForReview, pendingReview } = useMemo(() => {
     const COOLDOWN_DAYS = 30;
     const ready: ReviewItem[] = [];
@@ -165,9 +166,36 @@ export default function DashboardPage() {
 
     records.forEach((record) => {
       if (record.templateId === 'investment_checklist') {
+        // Trade 层优先：按每笔未复盘 SELL 交易独立提醒（该笔卖出日期 +30 天）
+        const initialized = ensureTradesInitialized(record.data);
+        const recordWithInit = { ...record, data: initialized };
+        const pendingTrades = findPendingReviewTrades(recordWithInit);
+
+        if (pendingTrades.length > 0) {
+          const code = (record.data.buy_company_name as string) || '未命名标的';
+          pendingTrades.forEach((trade) => {
+            if (!trade.date) return;
+            const parsed = new Date(trade.date);
+            if (isNaN(parsed.getTime())) return;
+            const daysSince = Math.floor(
+              (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            const item: ReviewItem = {
+              id: `${record.id}_${trade.id}`,
+              templateId: 'investment_checklist',
+              title: `${code} · 卖出${trade.qty}股@${trade.price}`,
+              dateLabel: `卖出于 ${trade.date}`,
+              link: `/form/investment_checklist/${record.id}`,
+            };
+            if (daysSince >= COOLDOWN_DAYS) ready.push(item);
+            else pending.push(item);
+          });
+          return; // 已通过 Trade 层处理，跳过旧的整单逻辑
+        }
+
+        // 回退：旧单据无结构化 trades → 整单按 sell_date +30 天提醒
         const sellDate = record.data.sell_date as string | undefined;
         if (!sellDate || String(sellDate).trim() === '') return;
-        // 已复盘？卖出复盘为可重复段，检查是否已有含核心教训的记录
         const reviewEntries = record.data.sell_review_entries as Record<string, unknown>[] | undefined;
         const reviewed = Array.isArray(reviewEntries) && reviewEntries.some((e) => !isFieldEmpty(e.sell_lesson));
         if (reviewed) return;

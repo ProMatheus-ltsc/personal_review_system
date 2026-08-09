@@ -12,12 +12,14 @@ interface RepeatableSectionProps {
   entries: RepeatableEntry[];
   onChange: (entries: RepeatableEntry[]) => void;
   templateId: TemplateId;
+  /** 动态选项覆盖：fieldId → options（由 FormRenderer 注入，如 sell_review_trade_id 从 SELL trades 生成） */
+  fieldOptionsOverride?: Record<string, { value: string; label: string }[]>;
 }
 
 /**
  * RepeatableSection — 可重复填写 section 组件
  *
- * 用于支持多次定期检查记录（如投资持有期间的多次检查）。
+ * 用于支持多次定期检查记录（如投资持有期间的多次检查、每笔卖出的独立复盘）。
  * 每条记录以折叠卡片形式展示，支持展开编辑、删除、添加新记录。
  */
 const RepeatableSection: React.FC<RepeatableSectionProps> = ({
@@ -25,6 +27,7 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
   entries,
   onChange,
   templateId,
+  fieldOptionsOverride,
 }) => {
   // Track which entries are expanded (by index)
   const [expandedIndices, setExpandedIndices] = useState<Set<number>>(() => {
@@ -154,6 +157,9 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
     const value = entry[field.id];
     const fieldKey = `${section.id}_${entryIndex}_${field.id}`;
 
+    // 动态选项覆盖（如 sell_review_trade_id 的选项由 FormRenderer 从 SELL trades 注入）
+    const dynamicOptions = fieldOptionsOverride?.[field.id];
+
     // No-op register for type compatibility (not used in controlled mode)
     const noopRegister = (() => ({
       name: field.id,
@@ -171,6 +177,7 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
           onChange={(val) => handleFieldChange(entryIndex, field.id, val)}
           templateId={templateId}
           controlled
+          dynamicOptions={dynamicOptions}
         />
       </div>
     );
