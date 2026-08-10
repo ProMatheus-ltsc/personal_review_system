@@ -77,7 +77,8 @@ export interface FormField {
    * The formula function receives the dependent field values and returns the display string.
    */
   computed?: {
-    dependsOn: string[];  // field IDs to watch
+    dependsOn: string[];  // field IDs to watch (within same record/entry)
+    externalDeps?: string[];  // field IDs resolved from external context (e.g. parent record)
     formula: (values: Record<string, unknown>) => string;  // calculation function
     placeholder?: string;  // shown when dependencies are incomplete
     errorText?: string;  // shown when calculation is invalid (e.g. division by zero)
