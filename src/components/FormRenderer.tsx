@@ -181,7 +181,20 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       // 投资检查清单：幂等初始化 Trade + Review 三层结构（兼容旧单据）
       if (template.id === 'investment_checklist') {
         const initialized = ensureTradesInitialized(initialData);
-        return { ...initialData, ...initialized };
+        const defaults: Record<string, any> = { ...initialData, ...initialized };
+        // 对空白日期字段补默认值（auto_today），确保复盘日期、卖出日期等自动填入今天
+        const now = new Date();
+        template.sections.forEach((s) => {
+          if (s.repeatable) return;
+          s.fields.forEach((f) => {
+            if (f.type !== 'date' || f.defaultValue === undefined) return;
+            const val = defaults[f.id];
+            if (val === undefined || val === null || String(val).trim() === '') {
+              defaults[f.id] = resolveDefaultValue(f.defaultValue, now);
+            }
+          });
+        });
+        return defaults;
       }
       // 编辑已有记录：对「空白日期字段」补默认值（auto_today / auto_week_start / auto_week_end）。
       // 保证已解锁的复盘日期（买入/卖出/投资周期复盘）自动填入今天，
@@ -334,10 +347,22 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       (status: 'draft' | 'completed'): FormRecord => {
         const now = new Date().toISOString();
         const data = getValues();
+        let title = `${template.name} - ${format(new Date(), 'yyyy-MM-dd')}`;
+        if (template.id === 'investment_checklist') {
+          const role = data.record_role as string | undefined;
+          const code = String(data.buy_company_name ?? '').trim();
+          if (role === 'buy' && code) {
+            title = `投资检查清单 - ${format(new Date(), 'yyyy-MM-dd')} - ${code} 买入`;
+          } else if (role === 'sell' && code) {
+            title = `投资检查清单 - ${format(new Date(), 'yyyy-MM-dd')} - ${code} 卖出`;
+          } else if (role === 'position' && code) {
+            title = `投资检查清单 - ${code} 持有`;
+          }
+        }
         return {
           id: currentRecordId.current,
           templateId: template.id,
-          title: `${template.name} - ${format(new Date(), 'yyyy-MM-dd')}`,
+          title,
           data,
           status,
           createdAt: initialData ? (initialData._createdAt as string) || now : now,
