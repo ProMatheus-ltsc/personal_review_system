@@ -213,6 +213,25 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
     field.conditionalHints && watchedHintValue && field.conditionalHints[watchedHintValue]
   ) || field.hint;
 
+  /** 把 hint 文本中的 http(s) 链接渲染为可点击链接（如根因分析工具地址） */
+  const renderHintText = (text: string) => {
+    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    return parts.map((part, i) =>
+      /^https?:\/\//.test(part) ? (
+        <a
+          key={i}
+          href={part}
+          target="_blank"
+          rel="noreferrer"
+          className="underline text-indigo-500 hover:text-indigo-700 break-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      ) : part
+    );
+  };
+
   const renderHint = () => {
     if (!effectiveHint) return null;
     const isLong = effectiveHint.length > 60;
@@ -225,7 +244,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
     return (
       <p className={`text-xs mt-1 italic ${isConditional ? 'text-indigo-500' : 'text-gray-400'}`}>
         <span className="mr-1">{isConditional ? '🎯' : '💡'}</span>
-        {displayText}
+        {renderHintText(displayText)}
         {isLong && (
           <button
             type="button"

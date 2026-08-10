@@ -587,12 +587,31 @@ export function DragMatrixInput({ field, value, onChange, dynamicOptions }: Inpu
     { qk: 'q2', col: 'bottom', row: 'right' },
   ];
 
+  // 评估解读：按「放置结果」动态生成建议（事半功倍 > 物有所值 > 无关痛痒 > 劳民伤财）
+  const evalOrder: { key: QuadrantKey; icon: string }[] = [
+    { key: 'q1', icon: '⭐' }, { key: 'q2', icon: '💰' },
+    { key: 'q3', icon: '⚖️' }, { key: 'q4', icon: '🚫' },
+  ];
+  const placed = evalOrder.filter((o) => matrix[o.key].length > 0);
+  const lowCost = matrix.q1.length + matrix.q3.length;
+  const highCost = matrix.q2.length + matrix.q4.length;
+  const highEffect = matrix.q1.length + matrix.q2.length;
+  const lowEffect = matrix.q3.length + matrix.q4.length;
+  const trendParts: string[] = [];
+  if (assigned.size > 0) {
+    if (lowEffect === 0) trendParts.push('全部落在效果好区间');
+    else if (lowEffect > highEffect) trendParts.push('多数选项效果偏弱，建议先改进方案本身');
+    if (highCost === 0) trendParts.push('成本均较低、风险可控');
+    else if (highCost > lowCost) trendParts.push('成本偏高，需评估资源承受力');
+    trendParts.push(`共 ${assigned.size} 个选项完成评估`);
+  }
+
   return (
     <div>
       {/* 选项池（可拖拽） */}
       <div className="mb-3">
         <p className="text-[11px] text-gray-500 mb-1.5">
-          📦 待评估选项（{poolOptions.length}/{allPooled}）—— 按住拖动到下方矩阵对应象限
+          📦 待评估选项（{poolOptions.length}/{allPooled}）—— 按住拖动到下方矩阵对应位置
         </p>
         <div className="flex flex-wrap gap-1.5 min-h-[34px]">
           {poolOptions.length === 0 && (
@@ -623,15 +642,26 @@ export function DragMatrixInput({ field, value, onChange, dynamicOptions }: Inpu
         </div>
       </div>
 
-      {/* 2×2 决策矩阵 */}
-      <div className="rounded-xl border border-gray-200 overflow-hidden">
-        {/* 轴标签：顶部为「效果 →」 */}
-        <div className="grid grid-cols-2">
-          <div className="text-center text-[10px] text-gray-400 py-1 bg-gray-50 border-b border-gray-200">效果差</div>
-          <div className="text-center text-[10px] text-gray-400 py-1 bg-gray-50 border-b border-gray-200">效果好 ← 效果 →</div>
+      {/* 2×2 决策矩阵（坐标轴式布局：横轴=效果，纵轴=成本） */}
+      <div className="rounded-xl border-2 border-gray-300 overflow-hidden">
+        {/* 顶部：效果轴（横轴） */}
+        <div className="grid grid-cols-[30px_1fr_1fr]">
+          <div className="bg-gray-100 border-r border-gray-300" />
+          <div className="col-span-2 bg-gray-100 text-center text-[10px] text-gray-500 py-1 border-b-2 border-gray-300 tracking-wide">
+            效果（横向）· 低 ←——————→ 高
+          </div>
         </div>
         {(['top', 'bottom'] as const).map((col) => (
-          <div key={col} className="grid grid-cols-2">
+          <div key={col} className="grid grid-cols-[30px_1fr_1fr]">
+            {/* 左侧：成本轴（纵轴）标签 */}
+            <div
+              className={`flex items-center justify-center text-[10px] text-gray-500 border-r border-gray-300 tracking-wide ${
+                col === 'top' ? 'border-b border-gray-200' : ''
+              }`}
+              style={{ writingMode: 'vertical-rl' }}
+            >
+              {col === 'top' ? '成本低' : '成本高'}
+            </div>
             {layout.filter((l) => l.col === col).map(({ qk, row }) => {
               const q = quadrants.find((x) => x.key === qk)!;
               const items = matrix[qk];
@@ -641,16 +671,19 @@ export function DragMatrixInput({ field, value, onChange, dynamicOptions }: Inpu
                   onDragOver={(e) => { e.preventDefault(); setDragOver(qk); }}
                   onDragLeave={() => setDragOver((cur) => (cur === qk ? null : cur))}
                   onDrop={(e) => onDrop(qk, e)}
-                  className={`p-2.5 border border-dashed transition-colors min-h-[92px] ${
+                  className={`p-2.5 border border-dashed transition-colors min-h-[96px] relative ${
                     col === 'top' ? 'border-b-0' : ''
                   } ${row === 'left' ? 'border-r-0' : ''} ${
                     dragOver === qk ? 'bg-indigo-50 border-indigo-300' : 'bg-white'
                   }`}
                 >
+                  {/* 坐标角标（效果 × 成本） */}
+                  <span className="absolute top-1 right-1.5 text-[9px] text-gray-300">
+                    {row === 'left' ? '效果低' : '效果高'} · {col === 'top' ? '成本低' : '成本高'}
+                  </span>
                   <div className="flex items-center gap-1.5 mb-1">
                     <span className={`w-2 h-2 rounded-full ${q.dotClass}`} />
                     <span className="text-xs font-semibold text-gray-800">{q.label}</span>
-                    <span className="text-[10px] text-gray-400 ml-auto">{q.desc}</span>
                   </div>
                   <p className={`text-[10px] leading-snug rounded px-1.5 py-0.5 mb-1 ${q.adviceClass}`}>{q.advice}</p>
                   <div className="flex flex-wrap gap-1 min-h-[20px]">
@@ -686,11 +719,30 @@ export function DragMatrixInput({ field, value, onChange, dynamicOptions }: Inpu
             })}
           </div>
         ))}
-        {/* 左侧轴标签：成本 */}
-        <div className="grid grid-cols-2 text-[10px] text-gray-400 bg-gray-50">
-          <div className="text-center py-1">成本低</div>
-          <div className="text-center py-1">成本高 ↑ 成本 ↓</div>
-        </div>
+      </div>
+
+      {/* 评估解读：根据放置结果动态生成建议 */}
+      <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3">
+        <p className="text-xs font-semibold text-indigo-800 mb-1.5">📋 评估解读</p>
+        {assigned.size === 0 ? (
+          <p className="text-xs text-indigo-500">把选项拖入矩阵后，这里会按「成本 × 效果」的落位给出针对性建议。</p>
+        ) : (
+          <>
+            <ul className="space-y-1 mb-2">
+              {placed.map(({ key, icon }) => {
+                const q = quadrants.find((x) => x.key === key)!;
+                return (
+                  <li key={key} className="text-xs text-gray-700 leading-relaxed">
+                    <span className="font-semibold text-gray-800">{icon} {q.label}（{q.desc}）：</span>
+                    <span className="font-medium text-indigo-700">{matrix[key].join('、')}</span>
+                    <span className="text-gray-500"> — {q.advice}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-xs text-indigo-700">{trendParts.join('；')}。</p>
+          </>
+        )}
       </div>
     </div>
   );

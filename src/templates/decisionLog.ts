@@ -91,7 +91,7 @@ export const decisionLogTemplate: FormTemplate = {
       fields: [
         // 第一步：明确问题与根因（决策方案必须建立在对问题根因的理解上）
         { id: 'problem_statement', label: '已明确的问题', type: 'textarea', required: true, placeholder: '用一句话说清楚：要解决的核心问题是什么？', priority: 'required', hint: '决策前必须先明确问题本身——避免"用错误的方法解决正确的问题"' },
-        { id: 'problem_root_cause', label: '问题的根因', type: 'textarea', required: true, placeholder: '导致这个问题的根本原因是什么？', priority: 'required', hint: '连续追问 5 个「为什么」找到根因；只有针对根因的方案才可能真正解决问题' },
+        { id: 'problem_root_cause', label: '问题的根因', type: 'textarea', required: true, placeholder: '导致这个问题的根本原因是什么？', priority: 'required', hint: '先用根因分析工具完成 5Why 连续追问（https://promatheus-ltsc.github.io/root-cause-analysis/），再把根因结论填到这里——只有针对根因的方案才可能真正解决问题' },
         { id: 'trigger_event', label: '触发事件', type: 'textarea', required: true, placeholder: '是什么事件触发了这个决策需求？', priority: 'required', hint: '描述促使你必须做出决策的事件或变化' },
         { id: 'cost_of_no_decision', label: '不决策的代价', type: 'textarea', placeholder: '如果不做决策，会有什么后果？', priority: 'recommended' },
         { id: 'time_pressure', label: '时间压力', type: 'radio', required: true, priority: 'required', options: [
