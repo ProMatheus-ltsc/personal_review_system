@@ -13,11 +13,17 @@ import WeeklyStats from './WeeklyStats';
 import InvestmentStats from './InvestmentStats';
 import EmotionStats from './EmotionStats';
 
+/**
+ * 模板统计 Tab 列表。
+ * 投资检查清单使用 investment_checklist_buy 作为 tab 触发标识，
+ * 实际数据查询在 InvestmentStats → getAllInvestmentRecords 中会并行查询
+ * buy/sell/position 三个模板的全部记录后合并统计，不会遗漏卖出单和持仓单。
+ */
 const TEMPLATE_TABS: { id: TemplateId; label: string; icon: string }[] = [
   { id: 'decision_log', label: '决策日志', icon: '🔄' },
   { id: 'daily_review', label: '日复盘', icon: '🌙' },
   { id: 'weekly_review', label: '周复盘', icon: '📊' },
-  { id: 'investment_checklist', label: '投资', icon: '✅' },
+  { id: 'investment_checklist_buy', label: '投资', icon: '✅' },
   { id: 'emotional_awareness', label: '情绪', icon: '🧠' },
 ];
 
@@ -74,7 +80,7 @@ export default function StatsPanel() {
         {activeTemplate === 'decision_log' && <DecisionStats timeRange={timeRange} />}
         {activeTemplate === 'daily_review' && <DailyStats timeRange={timeRange} />}
         {activeTemplate === 'weekly_review' && <WeeklyStats timeRange={timeRange} />}
-        {activeTemplate === 'investment_checklist' && <InvestmentStats timeRange={timeRange} />}
+        {activeTemplate === 'investment_checklist_buy' && <InvestmentStats timeRange={timeRange} />}
         {activeTemplate === 'emotional_awareness' && <EmotionStats timeRange={timeRange} />}
       </div>
     </div>
