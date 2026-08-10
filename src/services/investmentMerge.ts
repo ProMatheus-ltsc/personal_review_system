@@ -673,7 +673,7 @@ function createPositionSkeleton(code: string, buyRecord: FormRecord): FormRecord
   const now = new Date().toISOString();
   return {
     id: uuidv4(),
-    templateId: 'investment_checklist',
+    templateId: 'investment_checklist_position',
     title: `投资检查清单 - ${code} 持有仓位`,
     data: {
       record_role: RECORD_ROLE.POSITION,
