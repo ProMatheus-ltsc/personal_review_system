@@ -1,3 +1,5 @@
+import { isInvestmentTemplate } from '@/constants/templateMeta';
+
 /**
  * FormNavButtons — 表单底部导航按钮组
  *
@@ -46,9 +48,9 @@ export default function FormNavButtons({
 }: FormNavButtonsProps) {
   /** 投资清单买入/卖出单的完成文案（等待复盘解锁） */
   const completeLabel =
-      templateId === 'investment_checklist' && recordRole === 'buy'
+      isInvestmentTemplate(templateId) && recordRole === 'buy'
           ? '✅ 完成买入单 · 等待复盘'
-          : templateId === 'investment_checklist' && recordRole === 'sell'
+          : isInvestmentTemplate(templateId) && recordRole === 'sell'
               ? '✅ 完成卖出单 · 等待复盘'
               : '✅ 完成';
 
