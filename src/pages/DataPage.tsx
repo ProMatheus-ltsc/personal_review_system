@@ -122,9 +122,11 @@ export default function DataPage() {
   const executeImport = async (text: string, strategy: 'merge' | 'replace') => {
     try {
       const result = await importRecords(text, strategy);
-      setImportResult(
-          `导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条`
-      );
+      const parts = [`导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条`];
+      if (result.warnings.length > 0) {
+        parts.push(`\n⚠️ 校验警告：\n${result.warnings.join('\n')}`);
+      }
+      setImportResult(parts.join(''));
       await loadData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '未知错误';
@@ -285,15 +287,17 @@ export default function DataPage() {
               选择备份文件
             </button>
             {importResult && (
-                <p
-                    className={`mt-3 text-sm ${
-                        importResult.startsWith('导入完成')
-                            ? 'text-green-600'
-                            : 'text-red-600'
-                    }`}
-                >
-                  {importResult}
-                </p>
+              <p
+                  className={`mt-3 text-sm whitespace-pre-line ${
+                      importResult.startsWith('导入完成') && !importResult.includes('⚠️')
+                          ? 'text-green-600'
+                          : importResult.startsWith('导入完成')
+                              ? 'text-amber-600'
+                              : 'text-red-600'
+                  }`}
+              >
+                {importResult}
+              </p>
             )}
           </div>
         </section>
