@@ -34,6 +34,7 @@ import PositionReviewOverview from './PositionReviewOverview';
 import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
 import { isInvestmentTemplate } from '@/constants/templateMeta';
 import { useCooldownSettings } from '@/hooks/useCooldownSettings';
+import { useLinkedRecords } from '@/hooks/useLinkedRecords';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
 import {
@@ -347,6 +348,13 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // Track record status from initial data
   const [recordStatus, setRecordStatus] = useState<'draft' | 'completed'>(
       initialData?._status as 'draft' | 'completed' || 'draft'
+  );
+
+  // 投资清单：加载关联的完整买入/卖出单记录（持仓明细面板展示所有字段）
+  const linkedBuyIdsWatch = watch('linked_buy_record_ids') as string[] | undefined;
+  const linkedSellIdsWatch = watch('linked_sell_record_ids') as string[] | undefined;
+  const { linkedBuyRecords, linkedSellRecords } = useLinkedRecords(
+    template.id, recordRole, linkedBuyIdsWatch, linkedSellIdsWatch
   );
 
   // 投资清单：买卖单 ↔ 仓位单联动（关联仓位单加载、卖出单平均买入上下文注入、保存后汇总联动）
@@ -831,6 +839,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                 totalSellQty={watch('merged_total_sell_qty') as string | number | undefined}
                 soldOut={watch('sold_out') as boolean | undefined}
                 lastSellDate={watch('last_sell_date') as string | undefined}
+                linkedBuyRecords={linkedBuyRecords}
+                linkedSellRecords={linkedSellRecords}
             />
         )}
 
@@ -888,6 +898,9 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           entries={(watch(`${activeSection.id}_entries`) as Record<string, unknown>[] | undefined) || []}
                           onChange={(newEntries) => setValue(`${activeSection.id}_entries`, newEntries, { shouldDirty: true })}
                           templateId={template.id}
+                          externalContext={isInvestmentTemplate(template.id) && activeSection.id === 'while_holding'
+                            ? { buy_price: watch('buy_price'), buy_stop_loss_price: watch('buy_stop_loss_price') }
+                            : undefined}
                       />
                     </div>
                 ) : (
