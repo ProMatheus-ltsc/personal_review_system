@@ -94,6 +94,37 @@ const sectionWhileHolding: FormSection = {
     { id: 'hold_check_thesis', label: '已确认：我的买入逻辑仍然成立', type: 'checkbox', emphasis: true, priority: 'required', hint: '重读你买入时写的逻辑，是否还说得通？' },
     { id: 'hold_check_no_better', label: '已确认：没有明显更好的投资机会', type: 'checkbox', emphasis: true, priority: 'required', hint: '如果有更好的机会，是否值得换仓？' },
     { id: 'hold_check_date', label: '检查日期', type: 'date', priority: 'required', defaultValue: 'auto_today' },
+    { id: 'hold_current_price', label: '当前价格', type: 'text', priority: 'recommended',
+      placeholder: '输入当前市场价格',
+      hint: '填写后自动计算浮盈/浮亏和止损距离',
+      validation: NON_NEGATIVE_NUM_VALIDATION },
+    { id: 'hold_unrealized_pnl', label: '当前浮盈/浮亏(%)', type: 'text', priority: 'recommended', computed: {
+        dependsOn: ['hold_current_price'],
+        externalDeps: ['buy_price'],
+        formula: (values) => {
+          const currentPrice = parseFloat(values['hold_current_price'] as string);
+          const buyPrice = parseFloat(values['buy_price'] as string);
+          if (isNaN(currentPrice) || isNaN(buyPrice) || buyPrice === 0) return '';
+          const pnl = ((currentPrice - buyPrice) / buyPrice) * 100;
+          return pnl.toFixed(2);
+        },
+        placeholder: '自动计算（需填写当前价格）',
+      } },
+    { id: 'hold_stop_loss_hit', label: '止损价触及状态', type: 'text', priority: 'recommended', computed: {
+        dependsOn: ['hold_current_price'],
+        externalDeps: ['buy_stop_loss_price'],
+        formula: (values) => {
+          const currentPrice = parseFloat(values['hold_current_price'] as string);
+          const stopLoss = parseFloat(values['buy_stop_loss_price'] as string);
+          if (isNaN(currentPrice) || isNaN(stopLoss) || stopLoss === 0) return '';
+          if (currentPrice <= stopLoss) return '⚠️ 已触及止损价';
+          const distance = ((currentPrice - stopLoss) / stopLoss) * 100;
+          if (distance <= 5) return `⚡ 接近止损价（距离 ${distance.toFixed(1)}%）`;
+          return `✅ 未触及（距离止损 ${distance.toFixed(1)}%）`;
+        },
+        placeholder: '自动计算（需填写当前价格）',
+      } },
+    { id: 'hold_stop_loss_action', label: '触及止损后的行动', type: 'textarea', priority: 'optional', hint: '如果已触及或接近止损价，你打算怎么做？' },
     { id: 'hold_fundamentals_detail', label: '基本面变化详情', type: 'radio', priority: 'recommended', options: [
         { value: '无变化', label: '无变化' }, { value: '有正面变化', label: '有正面变化' }, { value: '有负面变化', label: '有负面变化' },
       ] },
@@ -104,11 +135,6 @@ const sectionWhileHolding: FormSection = {
     { id: 'hold_current_confidence', label: '当前信心', type: 'radio', priority: 'recommended', options: [
         { value: '1-很低', label: '1-很低' }, { value: '2-偏低', label: '2-偏低' }, { value: '3-中等', label: '3-中等' }, { value: '4-偏高', label: '4-偏高' }, { value: '5-很高', label: '5-很高' },
       ] },
-    { id: 'hold_stop_loss_hit', label: '是否触及止损价？', type: 'radio', priority: 'required', options: [
-        { value: '未触及', label: '未触及' }, { value: '接近', label: '接近' }, { value: '已触及', label: '已触及' },
-      ] },
-    { id: 'hold_stop_loss_action', label: '触及止损后的行动', type: 'textarea', priority: 'required', condition: { dependsOn: 'hold_stop_loss_hit', showWhen: '已触及' }, hint: '你执行了止损吗？如果没有，原因是什么？' },
-    { id: 'hold_unrealized_pnl', label: '当前浮盈/浮亏(%)', type: 'number', priority: 'optional' },
     { id: 'hold_notes', label: '持有期间备注', type: 'textarea', priority: 'optional', hint: '任何值得记录的观察' },
   ],
 };
