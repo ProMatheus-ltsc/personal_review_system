@@ -19,6 +19,8 @@
  *   - daily_lesson 两版本同名，直接兼容无需迁移
  * - weekly_review：
  *   - weekly_q2_next（下周第二象限要事）→ core_goal1（下周规划核心目标1）
+ * - decision_log：
+ *   - idea_innovation（SCAMPER 自由文本）→ idea_innovation_scamper（逐项创意表格，旧文本放入首行）
  */
 import { isFieldEmpty } from '@/utils/formValidation';
 import { isQuadrantMatrix } from '@/constants/quadrant';
@@ -36,13 +38,13 @@ function normalizeMatrix(val: unknown): QuadrantMatrix {
 
 /**
  * 读取记录时调用：返回迁移后的数据副本（不修改入参）。
- * 仅处理日/周复盘；其他模板原样返回。
+ * 仅处理日/周复盘与决策日志；其他模板原样返回。
  */
 export function migrateLegacyMatrixData(
   templateId: string,
   data: Record<string, unknown>
 ): Record<string, unknown> {
-  if (templateId !== 'daily_review' && templateId !== 'weekly_review') return data;
+  if (templateId !== 'daily_review' && templateId !== 'weekly_review' && templateId !== 'decision_log') return data;
   if (data._matrixMigrated) return data;
 
   const out = { ...data };
@@ -72,6 +74,17 @@ export function migrateLegacyMatrixData(
     // 旧「下周第二象限要事」→ 下周规划核心目标1（目标为空时才回填）
     if (isEmpty(out.core_goal1) && !isEmpty(out.weekly_q2_next)) {
       out.core_goal1 = out.weekly_q2_next;
+      changed = true;
+    }
+  }
+
+  if (templateId === 'decision_log') {
+    // 旧 SCAMPER 自由文本 → 逐项创意表格（表格为空时才把旧文本放入首行「创意方案」）
+    const scamperEmpty = isEmpty(out.idea_innovation_scamper);
+    if (scamperEmpty && !isEmpty(out.idea_innovation)) {
+      out.idea_innovation_scamper = [
+        { scamper: '综合', guide: '原 SCAMPER 创意记录', solution: String(out.idea_innovation) },
+      ];
       changed = true;
     }
   }

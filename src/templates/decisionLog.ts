@@ -104,7 +104,27 @@ export const decisionLogTemplate: FormTemplate = {
       fields: [
         { id: 'idea_experience', label: '选项生成 · 经验维度（立即反应）', type: 'textarea', priority: 'recommended', placeholder: '凭直觉/第一反应，你首先想到的做法是什么？过去遇到类似情况你是怎么做的？', hint: '写下脑海中第一个冒出来的方案，以及过往经验中可复用的做法', autocomplete: true },
         { id: 'idea_observation', label: '选项生成 · 观察/归纳/推理维度', type: 'textarea', priority: 'recommended', placeholder: '基于观察到的事实和规律，可以推导出哪些方案？', hint: '观察现状与数据 → 归纳规律 → 逻辑推理：别人/其他领域是怎么解决类似问题的？', autocomplete: true },
-        { id: 'idea_innovation', label: '选项生成 · 创新维度（SCAMPER 法则）', type: 'textarea', priority: 'recommended', placeholder: '用 SCAMPER 逐条提问，生成打破常规的方案', hint: 'SCAMPER 法则：S 替代（Substitute）换人/换物/换流程？C 组合（Combine）能否合并两个方案？A 调整（Adapt）借鉴其他领域做法？M 修改（Modify）改变形态/规模/参数？P 他用（Put to other use）换个用途？E 消除（Eliminate）去掉某些部分？R 重排（Reverse）颠倒顺序/角色？', autocomplete: true },
+        {
+          id: 'idea_innovation_scamper',
+          label: '选项生成 · 创新维度（SCAMPER 逐项创意）',
+          type: 'table',
+          priority: 'recommended',
+          hint: '按 SCAMPER 七个角度逐项提问，每个角度都试着提出一个创意解决方案；最后把可行的想法提炼进下方「选项梳理」',
+          tableColumns: [
+            { id: 'scamper', label: '法则', type: 'text', width: '14%' },
+            { id: 'guide', label: '引导问题', type: 'text', width: '42%' },
+            { id: 'solution', label: '创意方案', type: 'text', width: '44%' },
+          ],
+          defaultValue: [
+            { scamper: 'S 替代', guide: '能否换人 / 换物 / 换流程 / 换渠道？', solution: '' },
+            { scamper: 'C 组合', guide: '能否与其他方案、资源或环节合并？', solution: '' },
+            { scamper: 'A 调整', guide: '能否借鉴其他领域 / 行业的现成做法？', solution: '' },
+            { scamper: 'M 修改', guide: '能否改变形态、规模、参数或时间安排？', solution: '' },
+            { scamper: 'P 他用', guide: '能否换个用途、换个使用场景？', solution: '' },
+            { scamper: 'E 消除', guide: '能否去掉某些部分或环节？', solution: '' },
+            { scamper: 'R 重排', guide: '能否颠倒顺序、角色或因果关系？', solution: '' },
+          ],
+        },
         { id: 'options_analysis', label: '选项梳理', type: 'table', required: true, priority: 'required', hint: '把上面三个维度产生的想法提炼成 2-4 个正式选项填入表格', tableColumns: [
           { id: 'option_name', label: '选项', type: 'text', width: '20%' },
           { id: 'advantage', label: '优势', type: 'text', width: '25%' },

@@ -189,7 +189,15 @@ export function buildTemplateRecords(): FormRecord[] {
     time_pressure: '中等',
     idea_experience: '第一反应是切换到团队更熟悉的新框架',
     idea_observation: '观察：同类项目的社区活跃度与招聘热度都在上升；推理：长期看生态更健康',
-    idea_innovation: 'SCAMPER：不一定要全量切换——先切换核心模块（修改/部分替代），其余渐进迁移（重排）',
+    idea_innovation_scamper: [
+      { scamper: 'S 替代', guide: '能否换人 / 换物 / 换流程 / 换渠道？', solution: '替换为核心模块优先迁移的新方案' },
+      { scamper: 'C 组合', guide: '能否与其他方案、资源或环节合并？', solution: '' },
+      { scamper: 'A 调整', guide: '能否借鉴其他领域 / 行业的现成做法？', solution: '' },
+      { scamper: 'M 修改', guide: '能否改变形态、规模、参数或时间安排？', solution: '不一定要全量切换，先改核心模块' },
+      { scamper: 'P 他用', guide: '能否换个用途、换个使用场景？', solution: '' },
+      { scamper: 'E 消除', guide: '能否去掉某些部分或环节？', solution: '' },
+      { scamper: 'R 重排', guide: '能否颠倒顺序、角色或因果关系？', solution: '其余模块渐进迁移，重排上线顺序' },
+    ],
     options_analysis: [
       { option_name: '切换新框架', advantage: '长期维护成本低', risk: '迁移成本高', resources: '2 周人力', assessment: '优选' },
       { option_name: '维持现状', advantage: '无迁移成本', risk: '技术债累积', resources: '无', assessment: '备选' },
