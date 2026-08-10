@@ -132,7 +132,7 @@ export const weeklyReviewTemplate: FormTemplate = {
     {
       id: 'self_management_matrix',
       title: '自我管理矩阵',
-      description: '盘点本周时间投向了哪个象限，觉察是否被紧急事务推着走；为下周主动规划第二象限要事（高效能人士的七个习惯 · 要事第一）',
+      description: '盘点本周时间投向了哪个象限，觉察是否被紧急事务推着走；从第二象限中挑选的要事，将写入「下周规划」的核心目标（高效能人士的七个习惯 · 要事第一）',
       fields: [
         {
           id: 'weekly_matrix',
@@ -165,24 +165,15 @@ export const weeklyReviewTemplate: FormTemplate = {
           placeholder: '例：项目延期本可通过提前 2 天规划避免；下周把规划时间固定到周三晚',
           autocomplete: true,
         },
-        {
-          id: 'weekly_q2_next',
-          label: '下周第二象限要事',
-          type: 'textarea',
-          priority: 'required',
-          hint: '从矩阵第二象限中挑选 1-3 件，写入「下周规划」并为它们预留固定时间',
-          placeholder: '例：完成年度目标拆解 / 每周 3 次 30 分钟锻炼 / 与导师深谈一次',
-          autocomplete: true,
-        },
       ],
     },
     {
       id: 'next_week',
       title: '下周规划',
-      description: '规划下周的核心目标和行动',
+      description: '规划下周的核心目标和行动（核心目标优先从上方自我管理矩阵的第二象限中挑选）',
       fields: [
-        { id: 'core_goal1', label: '核心目标1', type: 'text', required: true, placeholder: '下周最重要的目标', priority: 'required' },
-        { id: 'core_goal2', label: '核心目标2', type: 'text', placeholder: '下周第二重要的目标', priority: 'recommended' },
+        { id: 'core_goal1', label: '核心目标1', type: 'text', required: true, placeholder: '下周最重要的目标（优先从矩阵第二象限挑选）', priority: 'required', hint: '要事第一：核心目标尽量来自第二象限——不紧急但重要的事，才决定长期结果' },
+        { id: 'core_goal2', label: '核心目标2', type: 'text', placeholder: '下周第二重要的目标（可继续从第二象限挑选）', priority: 'recommended' },
         { id: 'core_goal3', label: '核心目标3', type: 'text', placeholder: '下周第三重要的目标', priority: 'optional' },
         {
           id: 'key_actions',

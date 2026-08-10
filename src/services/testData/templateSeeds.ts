@@ -35,9 +35,14 @@ export function buildTemplateRecords(): FormRecord[] {
   // ===== 日复盘（2 条：昨天 + 5 天前） =====
   make('daily_review', `日复盘 - ${daysAgo(1)}`, {
     daily_date: daysAgo(1),
-    daily_most_valuable: '完成项目关键节点的方案评审，明确了技术路线',
+    daily_matrix: {
+      q1: [{ id: 'q1-1', text: '处理线上数据同步异常' }],
+      q2: [{ id: 'q2-1', text: '完成项目关键节点的方案评审，明确技术路线' }],
+      q3: [{ id: 'q3-1', text: '临时会议与琐碎沟通' }],
+      q4: [{ id: 'q4-1', text: '' }],
+    },
     daily_lesson: '早上一小时无人打扰的专注时间效率最高，应保留给最难的任务',
-    daily_tomorrow_priority: '推进数据迁移方案落地，下午安排会议',
+    daily_q2_focus: '推进数据迁移方案落地，下午安排会议',
     daily_mood: '😊 愉悦',
     daily_energy: '充沛',
     daily_highlight: '和团队就方案达成一致，减少返工',
@@ -46,9 +51,14 @@ export function buildTemplateRecords(): FormRecord[] {
   }, 1);
   make('daily_review', `日复盘 - ${daysAgo(5)}`, {
     daily_date: daysAgo(5),
-    daily_most_valuable: '读完《纳瓦尔宝典》第三章，记录到知识库',
+    daily_matrix: {
+      q1: [{ id: 'q1-1', text: '' }],
+      q2: [{ id: 'q2-1', text: '读完《纳瓦尔宝典》第三章，记录到知识库' }],
+      q3: [{ id: 'q3-1', text: '回复各类消息' }],
+      q4: [{ id: 'q4-1', text: '刷短视频' }],
+    },
     daily_lesson: '碎片时间适合输入，整块时间适合输出',
-    daily_tomorrow_priority: '完成周报初稿',
+    daily_q2_focus: '完成周报初稿',
     daily_mood: '😐 平静',
     daily_energy: '正常',
     daily_highlight: '坚持了 30 分钟午间散步',
@@ -60,6 +70,14 @@ export function buildTemplateRecords(): FormRecord[] {
     start_date: daysAgo(7),
     end_date: daysAgo(1),
     theme: '聚焦与推进',
+    weekly_matrix: {
+      q1: [{ id: 'q1-1', text: '周五临时上线的需求' }],
+      q2: [{ id: 'q2-1', text: '方案评审准备' }, { id: 'q2-2', text: '跑步两次' }],
+      q3: [{ id: 'q3-1', text: '频繁的临时沟通' }],
+      q4: [{ id: 'q4-1', text: '' }],
+    },
+    weekly_quadrant_balance: 'q1_dominant',
+    weekly_q2_insight: '方案评审的充分准备避免了很多返工；下周把规划时间固定下来',
     key_events: [
       { event: '完成方案评审', category: '工作', result: '成功', emotion: '积极' },
       { event: '和朋友聚餐', category: '人际', result: '一般', emotion: '积极' },
