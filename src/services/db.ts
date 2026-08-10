@@ -42,6 +42,39 @@ export function setCurrentAccountId(id: string | null): void {
   if (currentAccountId === id) return;
   currentAccountId = id;
   dbPromise = null; // 强制重新打开对应账户的业务库
+  recordsCache.clear();
+}
+
+// ============================================================
+// 内存缓存层 — getAllRecords 结果缓存（TTL 5秒，写操作自动失效）
+// ============================================================
+interface CacheEntry {
+  data: FormRecord[];
+  ts: number;
+}
+const CACHE_TTL = 5000;
+const recordsCache = new Map<string, CacheEntry>();
+
+function cacheKey(templateId?: string): string {
+  return templateId ?? '__all__';
+}
+
+function getCached(templateId?: string): FormRecord[] | null {
+  const entry = recordsCache.get(cacheKey(templateId));
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL) {
+    recordsCache.delete(cacheKey(templateId));
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(templateId: string | undefined, data: FormRecord[]): void {
+  recordsCache.set(cacheKey(templateId), { data, ts: Date.now() });
+}
+
+export function invalidateRecordsCache(): void {
+  recordsCache.clear();
 }
 
 /** 账户记录结构（元库存放） */
@@ -152,6 +185,7 @@ export function initDB(): Promise<IDBPDatabase> {
 export async function saveRecord(record: FormRecord): Promise<void> {
   const db = await initDB();
   await db.put('records', record);
+  invalidateRecordsCache();
 }
 
 /**
@@ -176,6 +210,8 @@ export async function getRecord(id: string): Promise<FormRecord | undefined> {
  * @throws 当 IndexedDB 读取失败时抛出异常
  */
 export async function getAllRecords(templateId?: string): Promise<FormRecord[]> {
+  const cached = getCached(templateId);
+  if (cached) return cached;
   const db = await initDB();
   let records: FormRecord[];
   if (templateId) {
@@ -183,9 +219,11 @@ export async function getAllRecords(templateId?: string): Promise<FormRecord[]> 
   } else {
     records = await db.getAll('records');
   }
-  return records.sort(
+  records.sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
+  setCache(templateId, records);
+  return records;
 }
 
 /**
@@ -198,6 +236,7 @@ export async function getAllRecords(templateId?: string): Promise<FormRecord[]> 
 export async function deleteRecord(id: string): Promise<void> {
   const db = await initDB();
   await db.delete('records', id);
+  invalidateRecordsCache();
 }
 
 /**
@@ -212,6 +251,7 @@ export async function deleteRecords(ids: string[]): Promise<void> {
   const tx = db.transaction('records', 'readwrite');
   await Promise.all(ids.map(id => tx.store.delete(id)));
   await tx.done;
+  invalidateRecordsCache();
 }
 
 /**
@@ -382,6 +422,7 @@ export async function importRecords(
     await settingsTx.done;
   }
 
+  invalidateRecordsCache();
   return { imported, skipped };
 }
 
