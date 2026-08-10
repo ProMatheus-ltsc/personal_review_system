@@ -19,7 +19,8 @@ import TemplateCard from '@/components/TemplateCard';
 import { getSetting, setSetting } from '@/services/db';
 import { calcStreak } from '@/utils/dashboard';
 import { isFieldEmpty } from '@/utils/formValidation';
-import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
+import { isInvestmentTemplate, INVESTMENT_TEMPLATE_IDS } from '@/constants/templateMeta';
+import { useCooldownSettings } from '@/hooks/useCooldownSettings';
 import { HabitStats, ReviewReminder, BackupReminder, RecentRecords, ContributionGraph, PositionOverview, type ReviewItem, type PositionItem } from '@/components/dashboard';
 
 /**
@@ -48,34 +49,8 @@ export default function DashboardPage() {
   const [lastBackupRecordCount, setLastBackupRecordCount] = useState<number>(0);
   const [isFirstVisit, setIsFirstVisit] = useState(false);
   const [backupCheckDone, setBackupCheckDone] = useState(false);
-  // 各场景复盘等待期天数（从设置读取，默认 30；决策日志长期复盘也支持配置）
-  const [cooldownDays, setCooldownDays] = useState({
-    buy: DEFAULT_COOLDOWN_DAYS,
-    sell: DEFAULT_COOLDOWN_DAYS,
-    position: DEFAULT_COOLDOWN_DAYS,
-    decision: DEFAULT_COOLDOWN_DAYS,
-  });
-
-  useEffect(() => {
-    (async () => {
-      const [buy, sell, pos, decision] = await Promise.all([
-        getSetting(COOLDOWN_SETTINGS.BUY),
-        getSetting(COOLDOWN_SETTINGS.SELL),
-        getSetting(COOLDOWN_SETTINGS.POSITION),
-        getSetting(COOLDOWN_SETTINGS.DECISION),
-      ]);
-      const toNum = (v: unknown, fallback: number): number => {
-        const n = Number(v);
-        return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
-      };
-      setCooldownDays({
-        buy: toNum(buy, DEFAULT_COOLDOWN_DAYS),
-        sell: toNum(sell, DEFAULT_COOLDOWN_DAYS),
-        position: toNum(pos, DEFAULT_COOLDOWN_DAYS),
-        decision: toNum(decision, DEFAULT_COOLDOWN_DAYS),
-      });
-    })();
-  }, []);
+  // 各场景复盘等待期天数（统一 hook 读取）
+  const cooldownDays = useCooldownSettings();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -131,27 +106,42 @@ export default function DashboardPage() {
     return { streak, weekCount, monthCount };
   }, [records]);
 
-  /** 各模板使用统计：记录数 + 最近编辑时间（用于模板卡片展示） */
+  /** 各模板使用统计：记录数 + 最近编辑时间（投资三模板合并为一个卡片） */
   const templateStats = useMemo(() => {
-    return templates.map((template) => {
-      const templateRecords = records.filter(
-        (r) => r.templateId === template.id
-      );
+    const investmentRecords = records.filter((r) => isInvestmentTemplate(r.templateId));
+    const investmentSorted = [...investmentRecords].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    const investmentLastUpdated = investmentSorted[0]
+      ? formatDistanceToNow(new Date(investmentSorted[0].updatedAt), { addSuffix: true, locale: zhCN })
+      : undefined;
+
+    const stats: { template: typeof templates[number]; recordCount: number; lastUpdated?: string }[] = [];
+    let investmentAdded = false;
+
+    templates.forEach((template) => {
+      if (isInvestmentTemplate(template.id)) {
+        if (!investmentAdded) {
+          investmentAdded = true;
+          stats.push({
+            template: { ...template, name: '投资检查清单', description: '买入/卖出/持仓全生命周期检查清单' },
+            recordCount: investmentRecords.length,
+            lastUpdated: investmentLastUpdated,
+          });
+        }
+        return;
+      }
+      const templateRecords = records.filter((r) => r.templateId === template.id);
       const sorted = [...templateRecords].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
       const lastUpdated = sorted[0]
-        ? formatDistanceToNow(new Date(sorted[0].updatedAt), {
-            addSuffix: true,
-            locale: zhCN,
-          })
+        ? formatDistanceToNow(new Date(sorted[0].updatedAt), { addSuffix: true, locale: zhCN })
         : undefined;
-      return {
-        template,
-        recordCount: templateRecords.length,
-        lastUpdated,
-      };
+      stats.push({ template, recordCount: templateRecords.length, lastUpdated });
     });
+
+    return stats;
   }, [records]);
 
   /** 最近编辑的 5 条记录（按 updatedAt 降序，用于快捷继续编辑） */
@@ -167,7 +157,7 @@ export default function DashboardPage() {
   const positions = useMemo<PositionItem[]>(() => {
     return records
       .filter((r) => {
-        if (r.templateId !== 'investment_checklist') return false;
+        if (r.templateId !== 'investment_checklist_position') return false;
         if (r.data.record_role !== 'position') return false;
         if (r.data.sold_out === true) return false;
         const sellPrice = r.data.sell_exit_price;
@@ -202,7 +192,7 @@ export default function DashboardPage() {
     const pending: ReviewItem[] = [];
 
     records.forEach((record) => {
-      if (record.templateId === 'investment_checklist') {
+      if (isInvestmentTemplate(record.templateId)) {
         const role = record.data.record_role as string | undefined;
         const code = (record.data.buy_company_name as string) || '未命名标的';
         const pushItem = (key: string, title: string, dateLabel: string, dateStr: string) => {
@@ -212,10 +202,10 @@ export default function DashboardPage() {
           const cooldown = cooldownFor(role);
           const item: ReviewItem = {
             id: key,
-            templateId: 'investment_checklist',
+            templateId: record.templateId,
             title,
             dateLabel,
-            link: `/form/investment_checklist/${record.id}`,
+            link: `/form/${record.templateId}/${record.id}`,
           };
           if (daysSince >= cooldown) ready.push(item);
           else pending.push(item);
@@ -303,7 +293,7 @@ export default function DashboardPage() {
       {/* 当前持仓概览（投资检查清单） */}
       <PositionOverview
         positions={positions}
-        onOpen={(recordId) => navigate(`/form/investment_checklist/${recordId}`)}
+        onOpen={(recordId) => navigate(`/form/investment_checklist_position/${recordId}`)}
       />
 
       {/* GitHub 风格复盘热力图 */}
@@ -338,16 +328,19 @@ export default function DashboardPage() {
 
       {/* Template Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-10">
-        {templateStats.map(({ template, recordCount, lastUpdated }) => (
-          <TemplateCard
-            key={template.id}
-            template={template}
-            recordCount={recordCount}
-            lastUpdated={lastUpdated}
-            onNewRecord={() => navigate(`/form/${template.id}`)}
-            onViewHistory={() => navigate(`/history/${template.id}`)}
-          />
-        ))}
+        {templateStats.map(({ template, recordCount, lastUpdated }) => {
+          const isInv = isInvestmentTemplate(template.id);
+          return (
+            <TemplateCard
+              key={template.id}
+              template={template}
+              recordCount={recordCount}
+              lastUpdated={lastUpdated}
+              onNewRecord={() => navigate(isInv ? `/form/${INVESTMENT_TEMPLATE_IDS[0]}` : `/form/${template.id}`)}
+              onViewHistory={() => navigate(isInv ? `/history/${INVESTMENT_TEMPLATE_IDS[0]}` : `/history/${template.id}`)}
+            />
+          );
+        })}
       </div>
 
       <RecentRecords
