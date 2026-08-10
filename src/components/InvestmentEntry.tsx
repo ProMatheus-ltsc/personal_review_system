@@ -41,7 +41,11 @@ export default function InvestmentEntry() {
 
   // 加载全部投资清单记录（用于查持仓与历史持仓快速选择）
   const loadRecords = useCallback(async () => {
-    const records = await getAllRecords('investment_checklist');
+    const records = (await Promise.all([
+      getAllRecords('investment_checklist_buy'),
+      getAllRecords('investment_checklist_sell'),
+      getAllRecords('investment_checklist_position'),
+    ])).flat();
     setAllRecords(records);
     return records;
   }, []);
@@ -92,8 +96,7 @@ export default function InvestmentEntry() {
           const now = new Date().toISOString();
           const newRecord: FormRecord = {
             id: uuidv4(),
-            templateId: 'investment_checklist',
-            // 统一单据名：投资检查清单 - {代码} {买入|卖出}（仓位单为「持有仓位」）
+            templateId: kind === 'buy' ? 'investment_checklist_buy' : 'investment_checklist_sell',
             title: `投资检查清单 - ${normalized} ${kind === 'buy' ? '买入' : '卖出'}`,
             data: {
               record_role: kind === 'buy' ? RECORD_ROLE.BUY : RECORD_ROLE.SELL,
@@ -107,7 +110,7 @@ export default function InvestmentEntry() {
           };
           // 关联已有仓位单（无仓位单时不创建——买入单完成后才同步创建）
           await linkNewRecord(newRecord, pos);
-          navigate(`/form/investment_checklist/${newRecord.id}`);
+          navigate(`/form/${newRecord.templateId}/${newRecord.id}`);
         } catch (err: unknown) {
           setError(err instanceof Error ? err.message : '创建失败，请重试');
         } finally {
