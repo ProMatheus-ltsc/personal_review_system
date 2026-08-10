@@ -116,7 +116,7 @@ export default function HistoryList({
   };
 
   const getRecordPhase = (record: FormRecord) => {
-    if (isInvestmentTemplate(record.templateId) && record.data.record_role) return null;
+    if (isInvestmentTemplate(record.templateId)) return null;
     const tmpl = templates.find((t) => t.id === record.templateId);
     if (!tmpl?.phases) return null;
     const idx = getCurrentPhaseIndex(tmpl.phases, record.data, tmpl.sections);
