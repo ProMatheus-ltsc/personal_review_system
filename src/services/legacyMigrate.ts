@@ -83,10 +83,20 @@ export function migrateLegacyMatrixData(
     const scamperEmpty = isEmpty(out.idea_innovation_scamper);
     if (scamperEmpty && !isEmpty(out.idea_innovation)) {
       out.idea_innovation_scamper = [
-        { scamper: '综合', guide: '原 SCAMPER 创意记录', solution: String(out.idea_innovation) },
+        { scamper: '综合', guide: '原 SCAMPER 创意记录', solution: String(out.idea_innovation), target_cause: '' },
       ];
       changed = true;
     }
+    // 旧发散自由文本（经验/观察维度 textarea）→ 结构化表格（想法 + 针对原因列）
+    const toIdeaTable = (fieldId: string): void => {
+      const v = out[fieldId];
+      if (Array.isArray(v)) return;
+      if (isEmpty(v)) return;
+      out[fieldId] = [{ idea: String(v).trim(), target_cause: '' }];
+      changed = true;
+    };
+    toIdeaTable('idea_experience');
+    toIdeaTable('idea_observation');
   }
 
   if (changed) out._matrixMigrated = true;

@@ -1037,6 +1037,23 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           </div>
                       )}
 
+                      {/* 决策日志：选项生成与评估页签顶部展示问题/表因/根因参照（来自 JSON 导入） */}
+                      {template.id === 'decision_log' && activeSection.id === 'option_generation' && (() => {
+                        const st = String(watch('problem_statement') ?? '').trim();
+                        const surf = String(watch('problem_surface_cause') ?? '').trim();
+                        const root = String(watch('problem_root_cause') ?? '').trim();
+                        if (!st && !surf && !root) return null;
+                        return (
+                          <div className="bg-slate-100 border border-slate-200 text-slate-700 text-sm p-3 rounded-lg mb-4 space-y-1">
+                            <div className="font-semibold">📌 问题与根因参照（来自「问题与根因」页签，只读）</div>
+                            {st && <div className="text-xs"><span className="font-medium text-slate-800">问题：</span>{st}</div>}
+                            {surf && <div className="text-xs"><span className="font-medium text-slate-800">表因：</span>{surf}</div>}
+                            {root && <div className="text-xs"><span className="font-medium text-slate-800">根因：</span>{root}</div>}
+                            <div className="text-xs text-amber-600 pt-1">发散选项时请标注每个想法主要「针对表因还是根因」——优先针对根因的方案才可能真正解决问题。</div>
+                          </div>
+                        );
+                      })()}
+
                       {/* 周复盘：填写「下周规划」时回显自我管理矩阵的第二象限要事，可一键填入核心目标（要事第一 · 上下文桥接） */}
                       {template.id === 'weekly_review' && activeSection.id === 'next_week' && (() => {
                         const matrix = watch('weekly_matrix') as { q2?: { text?: string }[] } | undefined;
