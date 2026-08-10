@@ -1,14 +1,10 @@
 /**
  * InvestmentMergePanel — 持仓明细展示面板（仓位单）
  *
- * 仓位单按股票代码汇总所有买卖明细：
- * - merged_buy_lots：逐笔买入明细（来自关联买入单），平均买入价自动计算
- * - merged_sell_lots：逐笔卖出明细（来自关联卖出单），平均卖出价自动计算
- * - 剩余持仓 = 总买入 − 总卖出（全部卖出后显示清仓状态与复盘开放基准日）
- * - linkedBuyRecords：关联买入单完整记录（展示止损价/目标价/情绪/信心等细节）
- * - linkedSellRecords：关联卖出单完整记录（展示卖出情绪/信心等细节）
- *
- * 数据由 syncPositionFromLinked 派生后写入仓位单，本面板仅从 props 渲染。
+ * 买入/卖出各只保留一张表格：
+ * - 有 linkedBuyRecords 时展示完整列（日期/价格/数量/逻辑/止损/目标/情绪/信心）
+ * - 无 linkedBuyRecords 时 fallback 到 mergedBuyLots 简表
+ * - 卖出同理
  */
 import type { ReactNode } from 'react';
 import type { FormRecord } from '@/types';
@@ -36,11 +32,6 @@ interface InvestmentMergePanelProps {
   linkedBuyRecords?: FormRecord[];
   linkedSellRecords?: FormRecord[];
 }
-
-const statusColor: Record<string, string> = {
-  当前记录: 'bg-indigo-100 text-indigo-600',
-  历史记录: 'bg-gray-100 text-gray-600',
-};
 
 function fmt(n: string | number | undefined, digits = 4): string {
   if (n === undefined || n === null || String(n).trim() === '') return '-';
@@ -113,7 +104,6 @@ export default function InvestmentMergePanel({
 
   return (
     <div className="mb-5 bg-indigo-50/50 border border-indigo-200 rounded-lg p-4">
-      {/* 标题 */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-indigo-800">
           📊 持仓明细 · <span className="font-bold">{stockCode}</span>
@@ -140,7 +130,7 @@ export default function InvestmentMergePanel({
         )}
       </div>
 
-      {/* 买入汇总 */}
+      {/* 买入明细（单一表格） */}
       {hasBuy && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
@@ -151,84 +141,66 @@ export default function InvestmentMergePanel({
             )}
           </div>
           <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-            <table className="w-full text-xs min-w-[520px]">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-500">
-                  <th className="px-3 py-2 font-medium">来源</th>
-                  <th className="px-3 py-2 font-medium">买入日期</th>
-                  <th className="px-3 py-2 font-medium">买入价</th>
-                  <th className="px-3 py-2 font-medium">数量</th>
-                  <th className="px-3 py-2 font-medium">买入逻辑</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(mergedBuyLots as MergeLot[]).map((l, i) => (
-                  <tr key={i} className="border-t border-gray-100">
-                    <td className="px-3 py-1.5">
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                          statusColor[l.source || ''] || 'bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {l.source || '买入'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-600">{l.date || '-'}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{fmt(l.price)}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{fmt(l.qty, 0)}</td>
-                    <td className="px-3 py-1.5 text-gray-500 truncate max-w-[200px]" title={l.reason || ''}>
-                      {l.reason || '-'}
-                    </td>
+            {hasLinkedBuy ? (
+              <table className="w-full text-xs min-w-[720px]">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-gray-500">
+                    <th className="px-3 py-2 font-medium">买入日期</th>
+                    <th className="px-3 py-2 font-medium">买入价</th>
+                    <th className="px-3 py-2 font-medium">数量</th>
+                    <th className="px-3 py-2 font-medium">买入逻辑</th>
+                    <th className="px-3 py-2 font-medium">止损价</th>
+                    <th className="px-3 py-2 font-medium">目标价</th>
+                    <th className="px-3 py-2 font-medium">情绪</th>
+                    <th className="px-3 py-2 font-medium">信心</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(linkedBuyRecords as FormRecord[]).map((r) => (
+                    <tr key={r.id} className="border-t border-gray-100 align-top">
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_date as string) || '-'}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_price as string | number)}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_quantity as string | number, 0)}</td>
+                      <td className="px-3 py-1.5 text-gray-600 max-w-[200px] truncate" title={(r.data.buy_thesis as string) || ''}>
+                        {(r.data.buy_thesis as string) || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_stop_loss_price as string | number)}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_target_price_num as string | number)}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_emotion_state as string) || '-'}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_confidence as string) || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs min-w-[480px]">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-gray-500">
+                    <th className="px-3 py-2 font-medium">买入日期</th>
+                    <th className="px-3 py-2 font-medium">买入价</th>
+                    <th className="px-3 py-2 font-medium">数量</th>
+                    <th className="px-3 py-2 font-medium">买入逻辑</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(mergedBuyLots as MergeLot[]).map((l, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-3 py-1.5 text-gray-600">{l.date || '-'}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{fmt(l.price)}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{fmt(l.qty, 0)}</td>
+                      <td className="px-3 py-1.5 text-gray-500 truncate max-w-[200px]" title={l.reason || ''}>
+                        {l.reason || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
 
-      {/* 关联买入单完整细节（止损价/目标价/情绪/信心/投资策略等） */}
-      {hasLinkedBuy && (
-        <div className="mb-3">
-          <div className="mb-2 text-xs text-gray-500">
-            📋 {(linkedBuyRecords as FormRecord[]).length} 份买入单据的完整填写细节
-          </div>
-          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-            <table className="w-full text-xs min-w-[720px]">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-500">
-                  <th className="px-3 py-2 font-medium">买入日期</th>
-                  <th className="px-3 py-2 font-medium">买入价</th>
-                  <th className="px-3 py-2 font-medium">数量</th>
-                  <th className="px-3 py-2 font-medium">核心买入逻辑</th>
-                  <th className="px-3 py-2 font-medium">止损价</th>
-                  <th className="px-3 py-2 font-medium">目标价</th>
-                  <th className="px-3 py-2 font-medium">买入情绪</th>
-                  <th className="px-3 py-2 font-medium">信心水平</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(linkedBuyRecords as FormRecord[]).map((r) => (
-                  <tr key={r.id} className="border-t border-gray-100 align-top">
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_date as string) || '-'}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_price as string | number)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_quantity as string | number, 0)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 max-w-[220px] truncate" title={(r.data.buy_thesis as string) || ''}>
-                      {(r.data.buy_thesis as string) || '-'}
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_stop_loss_price as string | number)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_target_price_num as string | number)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_emotion_state as string) || '-'}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_confidence as string) || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* 卖出明细 */}
+      {/* 卖出明细（单一表格） */}
       {hasSell && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
@@ -237,63 +209,55 @@ export default function InvestmentMergePanel({
             {remaining !== undefined && <Row label="剩余持仓" value={remaining > 0 ? remaining : 0} />}
           </div>
           <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-            <table className="w-full text-xs min-w-[480px]">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-500">
-                  <th className="px-3 py-2 font-medium">卖出日期</th>
-                  <th className="px-3 py-2 font-medium">卖出价</th>
-                  <th className="px-3 py-2 font-medium">数量</th>
-                  <th className="px-3 py-2 font-medium">卖出原因</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(mergedSellLots as MergeLot[]).map((l, i) => (
-                  <tr key={i} className="border-t border-gray-100">
-                    <td className="px-3 py-1.5 text-gray-600">{l.date || '-'}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{fmt(l.price)}</td>
-                    <td className="px-3 py-1.5 text-gray-600">{fmt(l.qty, 0)}</td>
-                    <td className="px-3 py-1.5 text-gray-500 truncate max-w-[160px]">{l.reason || '-'}</td>
+            {hasLinkedSell ? (
+              <table className="w-full text-xs min-w-[600px]">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-gray-500">
+                    <th className="px-3 py-2 font-medium">卖出日期</th>
+                    <th className="px-3 py-2 font-medium">卖出价</th>
+                    <th className="px-3 py-2 font-medium">数量</th>
+                    <th className="px-3 py-2 font-medium">卖出原因</th>
+                    <th className="px-3 py-2 font-medium">情绪</th>
+                    <th className="px-3 py-2 font-medium">信心</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* 关联卖出单完整细节（卖出情绪/信心等） */}
-      {hasLinkedSell && (
-        <div className="mb-3">
-          <div className="mb-2 text-xs text-gray-500">
-            📋 {(linkedSellRecords as FormRecord[]).length} 份卖出单据的完整填写细节
-          </div>
-          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-            <table className="w-full text-xs min-w-[600px]">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-500">
-                  <th className="px-3 py-2 font-medium">卖出日期</th>
-                  <th className="px-3 py-2 font-medium">卖出价</th>
-                  <th className="px-3 py-2 font-medium">数量</th>
-                  <th className="px-3 py-2 font-medium">卖出原因</th>
-                  <th className="px-3 py-2 font-medium">卖出情绪</th>
-                  <th className="px-3 py-2 font-medium">信心水平</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(linkedSellRecords as FormRecord[]).map((r) => (
-                  <tr key={r.id} className="border-t border-gray-100 align-top">
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_date as string) || '-'}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.sell_exit_price as string | number)}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.sell_quantity as string | number, 0)}</td>
-                    <td className="px-3 py-1.5 text-gray-500 truncate max-w-[160px]" title={(r.data.sell_reason as string) || ''}>
-                      {(r.data.sell_reason as string) || '-'}
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_emotion_state as string) || '-'}</td>
-                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_confidence as string) || '-'}</td>
+                </thead>
+                <tbody>
+                  {(linkedSellRecords as FormRecord[]).map((r) => (
+                    <tr key={r.id} className="border-t border-gray-100 align-top">
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_date as string) || '-'}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.sell_exit_price as string | number)}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.sell_quantity as string | number, 0)}</td>
+                      <td className="px-3 py-1.5 text-gray-500 truncate max-w-[160px]" title={(r.data.sell_reason as string) || ''}>
+                        {(r.data.sell_reason as string) || '-'}
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_emotion_state as string) || '-'}</td>
+                      <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_confidence as string) || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs min-w-[480px]">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-gray-500">
+                    <th className="px-3 py-2 font-medium">卖出日期</th>
+                    <th className="px-3 py-2 font-medium">卖出价</th>
+                    <th className="px-3 py-2 font-medium">数量</th>
+                    <th className="px-3 py-2 font-medium">卖出原因</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(mergedSellLots as MergeLot[]).map((l, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-3 py-1.5 text-gray-600">{l.date || '-'}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{fmt(l.price)}</td>
+                      <td className="px-3 py-1.5 text-gray-600">{fmt(l.qty, 0)}</td>
+                      <td className="px-3 py-1.5 text-gray-500 truncate max-w-[160px]">{l.reason || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
