@@ -92,9 +92,6 @@ export const weeklyReviewTemplate: FormTemplate = {
         { id: 'energy_level', label: '精力水平', type: 'radio', priority: 'recommended', options: [
           { value: '精力充沛', label: '精力充沛' }, { value: '正常', label: '正常' }, { value: '疲惫', label: '疲惫' },
         ]},
-        { id: 'emotional_stability', label: '情绪稳定性', type: 'radio', priority: 'optional', options: [
-          { value: '平静', label: '平静' }, { value: '焦虑', label: '焦虑' }, { value: '兴奋', label: '兴奋' }, { value: '低落', label: '低落' }, { value: '愤怒', label: '愤怒' },
-        ]},
       ],
     },
     {
@@ -108,6 +105,9 @@ export const weeklyReviewTemplate: FormTemplate = {
           { value: '中性', label: '中性' }, { value: '有些阻碍', label: '有些阻碍' }, { value: '明显阻碍', label: '明显阻碍' },
         ]},
         { id: 'behavior_trigger', label: '触发条件', type: 'textarea', placeholder: '什么情况会触发这个模式？', priority: 'recommended', hint: '关注情境、情绪、人物等触发因素' },
+        { id: 'emotional_stability', label: '情绪稳定性', type: 'radio', priority: 'optional', options: [
+          { value: '平静', label: '平静' }, { value: '焦虑', label: '焦虑' }, { value: '兴奋', label: '兴奋' }, { value: '低落', label: '低落' }, { value: '愤怒', label: '愤怒' },
+        ]},
         { id: 'emotion_dominant', label: '主导情绪', type: 'radio', priority: 'recommended', options: [
           { value: '平静', label: '平静' }, { value: '焦虑', label: '焦虑' }, { value: '兴奋', label: '兴奋' },
           { value: '低落', label: '低落' }, { value: '愤怒', label: '愤怒' }, { value: '其他', label: '其他（自定义）' },
@@ -128,47 +128,9 @@ export const weeklyReviewTemplate: FormTemplate = {
       ],
     },
     {
-      id: 'self_management_matrix',
-      title: '自我管理矩阵',
-      description: '盘点本周时间投向了哪个象限，觉察是否被紧急事务推着走；从第二象限中挑选的要事，将写入「下周规划」的核心目标（高效能人士的七个习惯 · 要事第一）',
-      fields: [
-        {
-          id: 'weekly_matrix',
-          label: '本周事项归位',
-          type: 'quadrant',
-          priority: 'recommended',
-          hint: '把本周的主要事项放入对应象限，看看时间分布是否失衡',
-          quadrants: DEFAULT_QUADRANTS,
-        },
-        {
-          id: 'weekly_quadrant_balance',
-          label: '本周时间分布自评',
-          type: 'radio',
-          priority: 'recommended',
-          hint: '诚实地评估本周时间都去哪了，这比"感觉忙"更接近真相',
-          options: [
-            { value: 'q1_dominant', label: '第一象限主导（被危机推着走，疲于救火）' },
-            { value: 'q2_dominant', label: '第二象限主导（主动规划，掌控节奏）' },
-            { value: 'q3_dominant', label: '第三象限主导（忙于琐碎，看似充实实则低效）' },
-            { value: 'q4_dominant', label: '第四象限主导（时间被无意义消耗）' },
-            { value: 'balanced', label: '相对均衡（能把时间留给要事）' },
-          ],
-        },
-        {
-          id: 'weekly_q2_insight',
-          label: '第二象限觉察',
-          type: 'textarea',
-          priority: 'optional',
-          hint: '本周哪些第一象限危机，本可以通过提前投入第二象限预防？下周如何调整节奏？',
-          placeholder: '例：项目延期本可通过提前 2 天规划避免；下周把规划时间固定到周三晚',
-          autocomplete: true,
-        },
-      ],
-    },
-    {
       id: 'h7_personal',
       title: '高效能 · 个人方面',
-      description: '基于《高效能人士的七个习惯》个人领域的胜利：习惯1 积极主动（4 个关键行动）+ 习惯2 以终为始（习惯3 要事第一见上方自我管理矩阵）',
+      description: '基于《高效能人士的七个习惯》个人领域的胜利：习惯1 积极主动（4 个关键行动）+ 习惯2 以终为始；完成后进入「自我管理矩阵」（习惯3 要事第一）',
       fields: [
         // —— 习惯1 积极主动：4 个关键行动复盘 ——
         {
@@ -227,6 +189,44 @@ export const weeklyReviewTemplate: FormTemplate = {
           priority: 'recommended',
           placeholder: '以重要角色（职业/家庭/健康/学习/朋友）视角回看本周：哪个角色被忽略了？',
           hint: '用你的关键角色来定义「终点」，看本周在每个角色上的投入是否平衡',
+          autocomplete: true,
+        },
+      ],
+    },
+    {
+      id: 'self_management_matrix',
+      title: '自我管理矩阵',
+      description: '盘点本周时间投向了哪个象限，觉察是否被紧急事务推着走；从第二象限中挑选的要事，将写入「下周规划」的核心目标（高效能人士的七个习惯 · 要事第一）',
+      fields: [
+        {
+          id: 'weekly_matrix',
+          label: '本周事项归位',
+          type: 'quadrant',
+          priority: 'recommended',
+          hint: '把本周的主要事项放入对应象限，看看时间分布是否失衡',
+          quadrants: DEFAULT_QUADRANTS,
+        },
+        {
+          id: 'weekly_quadrant_balance',
+          label: '本周时间分布自评',
+          type: 'radio',
+          priority: 'recommended',
+          hint: '诚实地评估本周时间都去哪了，这比"感觉忙"更接近真相',
+          options: [
+            { value: 'q1_dominant', label: '第一象限主导（被危机推着走，疲于救火）' },
+            { value: 'q2_dominant', label: '第二象限主导（主动规划，掌控节奏）' },
+            { value: 'q3_dominant', label: '第三象限主导（忙于琐碎，看似充实实则低效）' },
+            { value: 'q4_dominant', label: '第四象限主导（时间被无意义消耗）' },
+            { value: 'balanced', label: '相对均衡（能把时间留给要事）' },
+          ],
+        },
+        {
+          id: 'weekly_q2_insight',
+          label: '第二象限觉察',
+          type: 'textarea',
+          priority: 'optional',
+          hint: '本周哪些第一象限危机，本可以通过提前投入第二象限预防？下周如何调整节奏？',
+          placeholder: '例：项目延期本可通过提前 2 天规划避免；下周把规划时间固定到周三晚',
           autocomplete: true,
         },
       ],
