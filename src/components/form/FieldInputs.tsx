@@ -8,7 +8,7 @@
  * 每个组件保持单一职责、行数 ≤ 40，方便维护与复用。
  */
 import type { FormField, QuadrantKey, QuadrantMatrix } from '@/types';
-import { DEFAULT_QUADRANTS, EMPTY_QUADRANT_MATRIX, isQuadrantMatrix } from '@/constants/quadrant';
+import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
 
 /** 输入组件统一 props：字段定义 + 样式 + 受控/非受控双模式 */
 export interface InputFieldProps {
