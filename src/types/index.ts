@@ -9,7 +9,44 @@
  * - FormRecord: 存储在 IndexedDB 中的复盘记录
  * - TemplateId: 所有支持的模板 ID 联合类型
  */
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table';
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table' | 'quadrant';
+
+/** 四象限矩阵的象限标识（参考《高效能人士的七个习惯》时间管理矩阵） */
+export type QuadrantKey = 'q1' | 'q2' | 'q3' | 'q4';
+
+/** 象限中的单个事项 */
+export interface QuadrantItem {
+  id: string;
+  text: string;
+}
+
+/** 四象限矩阵的值结构：每个象限一组事项 */
+export type QuadrantMatrix = Record<QuadrantKey, QuadrantItem[]>;
+
+/** 四象限配置：名称 / 典型事项 / 处理原则 / 指导建议 / 视觉样式 */
+export interface QuadrantConfig {
+  key: QuadrantKey;
+  /** 象限名称，如「紧急且重要」 */
+  label: string;
+  /** 处理原则，如「立即做」 */
+  action: string;
+  /** 典型事项示例，如「危机、紧急问题、临期任务」 */
+  typical: string;
+  /** 针对该象限的指导建议 */
+  advice: string;
+  /** 事项输入框占位提示 */
+  placeholder: string;
+  /** 建议投入时间占比参考，如「40-50%（核心）」 */
+  ratio: string;
+  /** 象限色点 class */
+  dotClass: string;
+  /** 卡片边框 class */
+  borderClass: string;
+  /** 指导建议背景 class */
+  adviceClass: string;
+  /** 第二象限（重点）外发光 ring class */
+  ringClass?: string;
+}
 
 export interface TableColumn {
   id: string;           // 列标识
@@ -71,6 +108,9 @@ export interface FormField {
 
   /** Dynamic options sourced from a table field's column (for select type) */
   optionsFrom?: { fieldId: string; columnId: string };
+
+  /** 四象限矩阵配置（quadrant 类型专用）：定义 4 个象限的名称与指导建议 */
+  quadrants?: QuadrantConfig[];
 
   /**
    * Computed field configuration — makes the field read-only and auto-calculated.

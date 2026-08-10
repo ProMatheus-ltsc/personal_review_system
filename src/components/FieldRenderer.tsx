@@ -35,6 +35,7 @@ import {
   CheckboxGroupInput,
   RatingInput,
   TableInput,
+  QuadrantInput,
   ComputedDisplay,
   type InputFieldProps,
 } from '@/components/form/FieldInputs';
@@ -200,6 +201,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
           : <SingleCheckboxInput {...commonInputProps} />;
       case 'rating': return <RatingInput {...commonInputProps} />;
       case 'table': return <TableInput {...commonInputProps} />;
+      case 'quadrant': return <QuadrantInput {...commonInputProps} />;
       default: return null;
     }
   };

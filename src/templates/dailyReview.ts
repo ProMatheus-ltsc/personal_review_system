@@ -7,6 +7,7 @@
  *   让用户每天都能坚持，逐步建立「复盘反射」
  */
 import type { FormTemplate } from '@/types';
+import { DEFAULT_QUADRANTS } from '@/constants/quadrant';
 
 export const dailyReviewTemplate: FormTemplate = {
   id: 'daily_review',
@@ -23,6 +24,30 @@ export const dailyReviewTemplate: FormTemplate = {
         { id: 'daily_most_valuable', label: '今天最有价值的一件事是什么？', type: 'textarea', priority: 'required', hint: '不必是最忙的，而是最有意义的', placeholder: '例：与团队完成了一次深度对话，澄清了项目方向', autocomplete: true },
         { id: 'daily_lesson', label: '今天最大的收获/教训是什么？', type: 'textarea', priority: 'required', hint: '可以是一个新认知、一次情绪觉察、或一个小失误', placeholder: '例：发现自己在压力下容易忽略细节', autocomplete: true },
         { id: 'daily_tomorrow_priority', label: '明天最重要的一件事是什么？', type: 'textarea', priority: 'required', hint: '只选一件，让明天有焦点', placeholder: '例：完成项目方案初稿', autocomplete: true },
+      ],
+    },
+    {
+      id: 'self_management_matrix',
+      title: '自我管理矩阵',
+      description: '把今天的事项按「重要/紧急」归位到四个象限，重点关注不紧急但重要的第二象限 —— 它是提升长期效能的杠杆（高效能人士的七个习惯 · 要事第一）',
+      fields: [
+        {
+          id: 'daily_matrix',
+          label: '今日事项归位',
+          type: 'quadrant',
+          priority: 'recommended',
+          hint: '把今天做过的、没做完的事放入对应象限；再想想：有没有本属于第二象限、却被你搁置的事？',
+          quadrants: DEFAULT_QUADRANTS,
+        },
+        {
+          id: 'daily_q2_focus',
+          label: '明日第二象限要事',
+          type: 'textarea',
+          priority: 'required',
+          hint: '从第二象限中挑选 1 件，明天主动为它预留 30-60 分钟 —— 这是「要事第一」的每日练习',
+          placeholder: '例：晨间阅读 30 分钟 / 提前规划下周项目 / 联系一位久未联系的朋友',
+          autocomplete: true,
+        },
       ],
     },
     {

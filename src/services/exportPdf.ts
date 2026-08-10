@@ -16,6 +16,7 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { FormRecord, FormTemplate, FormField } from '@/types';
+import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -24,6 +25,27 @@ function formatDate(dateStr: string): string {
   const month = date.getMonth() + 1;
   const day = date.getDate();
   return `${year}年${month}月${day}日`;
+}
+
+/** 将四象限矩阵渲染为 HTML（按象限分组的列表） */
+function formatQuadrantMatrixHtml(field: FormField, value: unknown): string {
+  if (!isQuadrantMatrix(value)) {
+    return `<div style="margin-bottom: 10px; font-size: 14px; color: #999;">（未填写）</div>`;
+  }
+  const quadrants = field.quadrants && field.quadrants.length === 4 ? field.quadrants : DEFAULT_QUADRANTS;
+  let html = '';
+  quadrants.forEach((q) => {
+    const items = (value[q.key] || []).filter((it) => it && it.text && String(it.text).trim());
+    html += `<div style="margin: 8px 0 4px; font-size: 14px; font-weight: 600; color: #444;">${q.label}（${q.action}）</div>`;
+    if (items.length === 0) {
+      html += `<div style="font-size: 13px; color: #999; margin-left: 12px;">（未填写）</div>`;
+    } else {
+      html += '<ul style="margin: 4px 0 8px 24px; font-size: 13px; color: #555;">';
+      items.forEach((it) => { html += `<li>${it.text}</li>`; });
+      html += '</ul>';
+    }
+  });
+  return html;
 }
 
 function formatFieldValue(field: FormField, value: unknown): string {
@@ -59,6 +81,9 @@ function formatFieldValue(field: FormField, value: unknown): string {
     }
     case 'textarea': {
       return String(value).replace(/\n/g, '<br/>');
+    }
+    case 'quadrant': {
+      return formatQuadrantMatrixHtml(field, value);
     }
     default:
       return String(value);
@@ -119,7 +144,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
                 }
                 html += '</table>';
               }
-            } else if (field.type !== 'table') {
+            } else if (field.type !== 'table' && field.type !== 'quadrant') {
               const formatted = formatFieldValue(field, value);
               html += `
                 <div style="margin-bottom: 10px;">
@@ -127,6 +152,9 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
                   <span style="font-size: 14px; color: #555;">${formatted}</span>
                 </div>
               `;
+            } else if (field.type === 'quadrant') {
+              html += `<h4 style="font-size: 14px; font-weight: 600; margin-top: 12px; margin-bottom: 6px; color: #555;">${field.label}</h4>`;
+              html += formatQuadrantMatrixHtml(field, value);
             }
           }
         });
@@ -166,7 +194,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
           }
           html += '</table>';
         }
-      } else if (field.type !== 'table') {
+      } else if (field.type !== 'table' && field.type !== 'quadrant') {
         const formatted = formatFieldValue(field, value);
         html += `
           <div style="margin-bottom: 10px;">
@@ -174,6 +202,9 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
             <span style="font-size: 14px; color: #555;">${formatted}</span>
           </div>
         `;
+      } else if (field.type === 'quadrant') {
+        html += `<h3 style="font-size: 15px; font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #444;">${field.label}</h3>`;
+        html += formatQuadrantMatrixHtml(field, value);
       }
     }
   }

@@ -12,6 +12,7 @@
  * - 空值统一显示为「（未填写）」
  */
 import { FormRecord, FormTemplate, FormField } from '@/types';
+import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
 
 /** 将 ISO 日期字符串格式化为中文日期（如「2024年3月15日」） */
 function formatDate(dateStr: string): string {
@@ -21,6 +22,24 @@ function formatDate(dateStr: string): string {
   const month = date.getMonth() + 1;
   const day = date.getDate();
   return `${year}年${month}月${day}日`;
+}
+
+/** 将四象限矩阵渲染为 Markdown 列表（按象限分组） */
+function formatQuadrantMatrix(field: FormField, value: unknown): string {
+  if (!isQuadrantMatrix(value)) return '（未填写）';
+  const quadrants = field.quadrants && field.quadrants.length === 4 ? field.quadrants : DEFAULT_QUADRANTS;
+  const lines: string[] = [];
+  quadrants.forEach((q) => {
+    const items = (value[q.key] || []).filter((it) => it && it.text && String(it.text).trim());
+    lines.push(`**${q.label}**（${q.action}）`);
+    if (items.length === 0) {
+      lines.push('- （未填写）');
+    } else {
+      items.forEach((it) => lines.push(`- ${it.text}`));
+    }
+    lines.push('');
+  });
+  return lines.join('\n');
 }
 
 function formatFieldValue(field: FormField, value: unknown): string {
@@ -57,6 +76,9 @@ function formatFieldValue(field: FormField, value: unknown): string {
     }
     case 'textarea': {
       return String(value);
+    }
+    case 'quadrant': {
+      return formatQuadrantMatrix(field, value);
     }
     default:
       return String(value);
@@ -123,6 +145,10 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
               lines.push('');
               lines.push(String(value));
               lines.push('');
+            } else if (field.type === 'quadrant') {
+              lines.push(`#### ${field.label}`);
+              lines.push('');
+              lines.push(formatQuadrantMatrix(field, value));
             } else if (field.type !== 'table') {
               const formatted = formatFieldValue(field, value);
               lines.push(`**${field.label}**: ${formatted}`);
@@ -170,6 +196,10 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
         lines.push('');
         lines.push(String(value));
         lines.push('');
+      } else if (field.type === 'quadrant') {
+        lines.push(`### ${field.label}`);
+        lines.push('');
+        lines.push(formatQuadrantMatrix(field, value));
       } else if (field.type !== 'table') {
         const formatted = formatFieldValue(field, value);
         lines.push(`**${field.label}**: ${formatted}`);

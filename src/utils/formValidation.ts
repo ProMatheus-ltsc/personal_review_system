@@ -33,6 +33,18 @@ export function isFieldEmpty(val: unknown): boolean {
       return Object.values(row).every((v) => v === undefined || v === null || v === '' || (typeof v === 'string' && v.trim() === ''));
     });
   }
+  // Quadrant matrix field: object with q1/q2/q3/q4 arrays — empty if all quadrants have no non-empty items
+  if (typeof val === 'object' && val !== null && 'q1' in val && 'q2' in val && 'q3' in val && 'q4' in val) {
+    const matrix = val as Record<string, unknown>;
+    return ['q1', 'q2', 'q3', 'q4'].every((key) => {
+      const arr = matrix[key];
+      return !Array.isArray(arr) || arr.every((item) => {
+        if (typeof item !== 'object' || item === null) return true;
+        const text = (item as { text?: unknown }).text;
+        return text === undefined || text === null || String(text).trim() === '';
+      });
+    });
+  }
   return (
     val === undefined ||
     val === null ||

@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type { FormSection, FormField } from '@/types';
 import FieldRenderer from './FieldRenderer';
 import type { TemplateId } from '@/types';
+import { EMPTY_QUADRANT_MATRIX } from '@/constants/quadrant';
 
 interface RepeatableEntry {
   [fieldId: string]: unknown;
@@ -71,6 +72,8 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
     section.fields.forEach((f) => {
       if (f.type === 'table') {
         newEntry[f.id] = [{}];
+      } else if (f.type === 'quadrant') {
+        newEntry[f.id] = EMPTY_QUADRANT_MATRIX();
       } else if (f.defaultValue !== undefined) {
         if (f.defaultValue === 'today' || f.defaultValue === 'auto_today') {
           newEntry[f.id] = now.toISOString().slice(0, 10);

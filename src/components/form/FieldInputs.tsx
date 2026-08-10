@@ -7,7 +7,8 @@
  *
  * 每个组件保持单一职责、行数 ≤ 40，方便维护与复用。
  */
-import type { FormField } from '@/types';
+import type { FormField, QuadrantKey, QuadrantMatrix } from '@/types';
+import { DEFAULT_QUADRANTS, EMPTY_QUADRANT_MATRIX, isQuadrantMatrix } from '@/constants/quadrant';
 
 /** 输入组件统一 props：字段定义 + 样式 + 受控/非受控双模式 */
 export interface InputFieldProps {
@@ -423,6 +424,106 @@ export function TableInput({ field, value, onChange }: InputFieldProps) {
       >
         + 添加行
       </button>
+    </div>
+  );
+}
+
+/** 四象限矩阵输入（自我管理矩阵 · 参考《高效能人士的七个习惯》时间管理矩阵）
+ * 2×2 网格，每象限一个卡片：名称 + 典型事项 + 指导建议 + 事项列表（增删改）。
+ * 第二象限（不紧急但重要）为重点关注对象，视觉上特殊强调。
+ * 值为 QuadrantMatrix：{ q1: QuadrantItem[], q2: ..., q3: ..., q4: ... }，受控组件。
+ */
+export function QuadrantInput({ field, value, onChange }: InputFieldProps) {
+  const quadrants = field.quadrants && field.quadrants.length === 4 ? field.quadrants : DEFAULT_QUADRANTS;
+  // 归一化：旧数据部分象限缺失/损坏时逐象限兜底为空数组，避免整张矩阵丢失
+  const raw = isQuadrantMatrix(value) ? value : (value && typeof value === 'object' ? value as Partial<QuadrantMatrix> : undefined);
+  const matrix: QuadrantMatrix = {
+    q1: Array.isArray(raw?.q1) ? raw.q1 : [],
+    q2: Array.isArray(raw?.q2) ? raw.q2 : [],
+    q3: Array.isArray(raw?.q3) ? raw.q3 : [],
+    q4: Array.isArray(raw?.q4) ? raw.q4 : [],
+  };
+
+  const updateItem = (qk: QuadrantKey, idx: number, text: string) => {
+    const items = [...(matrix[qk] || [])];
+    items[idx] = { ...items[idx], text };
+    onChange?.({ ...matrix, [qk]: items });
+  };
+  const addItem = (qk: QuadrantKey) => {
+    const items = [...(matrix[qk] || [])];
+    items.push({ id: `${qk}-${Date.now()}-${items.length}`, text: '' });
+    onChange?.({ ...matrix, [qk]: items });
+  };
+  const removeItem = (qk: QuadrantKey, idx: number) => {
+    onChange?.({ ...matrix, [qk]: (matrix[qk] || []).filter((_, i) => i !== idx) });
+  };
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {quadrants.map((q) => {
+        const items = matrix[q.key] || [];
+        const isFocus = q.key === 'q2';
+        return (
+          <div
+            key={q.key}
+            className={`rounded-xl border p-3 flex flex-col gap-2 ${q.borderClass} ${
+              isFocus ? 'ring-2 ' + (q.ringClass || 'ring-emerald-200') : ''
+            }`}
+          >
+            {/* 象限标题 + 重点徽标 */}
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${q.dotClass}`} />
+              <span className="text-sm font-semibold text-gray-800">{q.label}</span>
+              {isFocus && (
+                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-600 text-white whitespace-nowrap">
+                  ⭐ 重点投入
+                </span>
+              )}
+            </div>
+            {/* 典型事项 + 投入比例 */}
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              📌 {q.typical}
+              <span className="ml-2 text-gray-400">投入参考：{q.ratio}</span>
+            </p>
+            {/* 指导建议 */}
+            <div className={`text-[11px] leading-relaxed rounded-lg px-2 py-1.5 ${q.adviceClass}`}>
+              <span className="font-semibold">【{q.action}】</span>
+              {q.advice}
+            </div>
+            {/* 事项列表 */}
+            <div className="flex flex-col gap-1.5 flex-1 min-h-[56px]">
+              {items.map((item, idx) => (
+                <div key={item.id || idx} className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={item.text}
+                    onChange={(e) => updateItem(q.key, idx, e.target.value)}
+                    placeholder={q.placeholder}
+                    className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeItem(q.key, idx)}
+                    className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                    title="移除事项"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => addItem(q.key)}
+                className="text-xs py-1.5 border border-dashed border-gray-300 rounded-lg text-gray-400 hover:text-indigo-600 hover:border-indigo-400 transition-colors"
+              >
+                + 添加事项
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
