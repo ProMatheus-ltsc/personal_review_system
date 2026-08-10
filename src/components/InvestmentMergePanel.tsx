@@ -5,6 +5,8 @@
  * - merged_buy_lots：逐笔买入明细（来自关联买入单），平均买入价自动计算
  * - merged_sell_lots：逐笔卖出明细（来自关联卖出单），平均卖出价自动计算
  * - 剩余持仓 = 总买入 − 总卖出（全部卖出后显示清仓状态与复盘开放基准日）
+ * - linkedBuyRecords：关联买入单完整记录（展示止损价/目标价/情绪/信心等细节）
+ * - linkedSellRecords：关联卖出单完整记录（展示卖出情绪/信心等细节）
  *
  * 数据由 syncPositionFromLinked 派生后写入仓位单，本面板仅从 props 渲染。
  */
@@ -29,15 +31,12 @@ interface InvestmentMergePanelProps {
   mergedSellLots?: MergeLot[];
   weightedSell?: string | number;
   totalSellQty?: string | number;
-  /** 是否已全部卖出（剩余持仓为 0） */
   soldOut?: boolean;
-  /** 最后卖出日期（全部卖出后作为复盘开放基准） */
   lastSellDate?: string;
   linkedBuyRecords?: FormRecord[];
   linkedSellRecords?: FormRecord[];
 }
 
-/** 买入批次的来源标签配色：当前记录（indigo）/ 历史记录（gray） */
 const statusColor: Record<string, string> = {
   当前记录: 'bg-indigo-100 text-indigo-600',
   历史记录: 'bg-gray-100 text-gray-600',
@@ -73,6 +72,8 @@ export default function InvestmentMergePanel({
   totalSellQty,
   soldOut,
   lastSellDate,
+  linkedBuyRecords,
+  linkedSellRecords,
 }: InvestmentMergePanelProps) {
   if (!stockCode) return null;
   const hasBuy = Array.isArray(mergedBuyLots) && mergedBuyLots.length > 0;
@@ -84,7 +85,6 @@ export default function InvestmentMergePanel({
   const remaining =
     !isNaN(buyQty) && !isNaN(sellQty) && sellQty >= 0 ? buyQty - sellQty : undefined;
 
-  // 加权卖出价：优先使用显式传入值，否则从卖出批次计算（部分卖出时顶层字段已清空）
   let weightedSellValue = weightedSell;
   if ((weightedSellValue === undefined || String(weightedSellValue).trim() === '') && hasSell) {
     let qtySum = 0;
@@ -100,7 +100,6 @@ export default function InvestmentMergePanel({
     if (qtySum > 0) weightedSellValue = costSum / qtySum;
   }
 
-  // 已清仓 = 卖出数量恰好等于总持仓（严格相等）
   const isSoldOut = soldOut === true || (remaining !== undefined && remaining === 0);
 
   let positionStatus: string | null = null;
@@ -108,6 +107,9 @@ export default function InvestmentMergePanel({
     if (isSoldOut) positionStatus = '已清仓';
     else positionStatus = '部分卖出';
   }
+
+  const hasLinkedBuy = Array.isArray(linkedBuyRecords) && linkedBuyRecords.length > 0;
+  const hasLinkedSell = Array.isArray(linkedSellRecords) && linkedSellRecords.length > 0;
 
   return (
     <div className="mb-5 bg-indigo-50/50 border border-indigo-200 rounded-lg p-4">
@@ -138,7 +140,7 @@ export default function InvestmentMergePanel({
         )}
       </div>
 
-      {/* 买入明细 */}
+      {/* 买入汇总 */}
       {hasBuy && (
         <div className="mb-3">
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
@@ -185,9 +187,50 @@ export default function InvestmentMergePanel({
         </div>
       )}
 
+      {/* 关联买入单完整细节（止损价/目标价/情绪/信心/投资策略等） */}
+      {hasLinkedBuy && (
+        <div className="mb-3">
+          <div className="mb-2 text-xs text-gray-500">
+            📋 {(linkedBuyRecords as FormRecord[]).length} 份买入单据的完整填写细节
+          </div>
+          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+            <table className="w-full text-xs min-w-[720px]">
+              <thead>
+                <tr className="bg-gray-50 text-left text-gray-500">
+                  <th className="px-3 py-2 font-medium">买入日期</th>
+                  <th className="px-3 py-2 font-medium">买入价</th>
+                  <th className="px-3 py-2 font-medium">数量</th>
+                  <th className="px-3 py-2 font-medium">核心买入逻辑</th>
+                  <th className="px-3 py-2 font-medium">止损价</th>
+                  <th className="px-3 py-2 font-medium">目标价</th>
+                  <th className="px-3 py-2 font-medium">买入情绪</th>
+                  <th className="px-3 py-2 font-medium">信心水平</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(linkedBuyRecords as FormRecord[]).map((r) => (
+                  <tr key={r.id} className="border-t border-gray-100 align-top">
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_date as string) || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_price as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_quantity as string | number, 0)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 max-w-[220px] truncate" title={(r.data.buy_thesis as string) || ''}>
+                      {(r.data.buy_thesis as string) || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_stop_loss_price as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.buy_target_price_num as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_emotion_state as string) || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.buy_confidence as string) || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* 卖出明细 */}
       {hasSell && (
-        <div>
+        <div className="mb-3">
           <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
             <Row label="平均卖出价" value={fmt(weightedSellValue)} strong />
             <Row label="总卖出数量" value={fmt(totalSellQty, 0)} />
@@ -215,14 +258,57 @@ export default function InvestmentMergePanel({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* 关联卖出单完整细节（卖出情绪/信心等） */}
+      {hasLinkedSell && (
+        <div className="mb-3">
+          <div className="mb-2 text-xs text-gray-500">
+            📋 {(linkedSellRecords as FormRecord[]).length} 份卖出单据的完整填写细节
+          </div>
+          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+            <table className="w-full text-xs min-w-[600px]">
+              <thead>
+                <tr className="bg-gray-50 text-left text-gray-500">
+                  <th className="px-3 py-2 font-medium">卖出日期</th>
+                  <th className="px-3 py-2 font-medium">卖出价</th>
+                  <th className="px-3 py-2 font-medium">数量</th>
+                  <th className="px-3 py-2 font-medium">卖出原因</th>
+                  <th className="px-3 py-2 font-medium">卖出情绪</th>
+                  <th className="px-3 py-2 font-medium">信心水平</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(linkedSellRecords as FormRecord[]).map((r) => (
+                  <tr key={r.id} className="border-t border-gray-100 align-top">
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_date as string) || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.sell_exit_price as string | number)}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{fmt(r.data.sell_quantity as string | number, 0)}</td>
+                    <td className="px-3 py-1.5 text-gray-500 truncate max-w-[160px]" title={(r.data.sell_reason as string) || ''}>
+                      {(r.data.sell_reason as string) || '-'}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_emotion_state as string) || '-'}</td>
+                    <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">{(r.data.sell_confidence as string) || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 清仓/部分卖出状态提示 */}
+      {hasSell && (
+        <div>
           {isSoldOut ? (
-            <p className="mt-2 text-xs text-green-700">
+            <p className="text-xs text-green-700">
               ✅ 已全部卖出，复盘将于 <b>{lastSellDate || '最后卖出日期'}</b> 起 30 天后开放
             </p>
           ) : (
             remaining !== undefined &&
             remaining > 0 && (
-              <p className="mt-2 text-xs text-blue-600">
+              <p className="text-xs text-blue-600">
                 本次为部分卖出，剩余 {remaining} 股仍持有，可继续追加买入；全部卖出后按冷静期设置开放复盘
               </p>
             )
