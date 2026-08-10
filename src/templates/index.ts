@@ -5,10 +5,10 @@ import { annualReviewTemplate } from './annualReview';
 import { emotionalAwarenessTemplate } from './emotionalAwareness';
 import { caseStudyTemplate } from './caseStudy';
 import { decisionLogTemplate } from './decisionLog';
-import { investmentChecklistTemplate } from './investmentChecklist';
+import { investmentBuyTemplate, investmentSellTemplate, investmentPositionTemplate } from './investmentChecklist';
 import type { FormTemplate } from '@/types';
 
-export { dailyReviewTemplate, weeklyReviewTemplate, monthlyReviewTemplate, annualReviewTemplate, emotionalAwarenessTemplate, caseStudyTemplate, decisionLogTemplate, investmentChecklistTemplate };
+export { dailyReviewTemplate, weeklyReviewTemplate, monthlyReviewTemplate, annualReviewTemplate, emotionalAwarenessTemplate, caseStudyTemplate, decisionLogTemplate, investmentBuyTemplate, investmentSellTemplate, investmentPositionTemplate };
 
 export const templates: FormTemplate[] = [
   dailyReviewTemplate,
@@ -18,5 +18,7 @@ export const templates: FormTemplate[] = [
   emotionalAwarenessTemplate,
   caseStudyTemplate,
   decisionLogTemplate,
-  investmentChecklistTemplate,
+  investmentBuyTemplate,
+  investmentSellTemplate,
+  investmentPositionTemplate,
 ];
