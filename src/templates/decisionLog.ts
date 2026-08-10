@@ -7,16 +7,15 @@
  *   决策日志强制记录决策逻辑，便于事后验证和改进决策能力
  *
  * 阶段设计：
- * - Phase 1「决策前」：做决定时填写，包含基础信息和决策前分析
+ * - Phase 1「决策前」：做决定时填写，包含基础信息和决策前分析（4 个页签按决策流推进）
  * - Phase 2「决策后」：决策后1-7天填写，记录短期执行反馈；完成即标记整个决策日志完成
  * - Phase 3「长期复盘」：记录完成后1个月提醒填写，评估长期效果
  *
- * 决策前流程（2026-08-11 增强）：
- * 1. 明确问题与根因 —— 决策方案必须建立在对问题及其根因的清晰理解上
- * 2. 三维度生成选项 —— 经验（立即反应）/ 观察归纳推理 / 创新（SCAMPER 法则）全面发散
- * 3. 选项梳理（表格）—— 把三维度的想法提炼为正式选项
- * 4. 决策矩阵评估 —— 拖拽选项到「成本×效果」矩阵（事半功倍/物有所值/无关痛痒/劳民伤财）
- * 5. 最终决策 —— 结合矩阵评估结果做出选择
+ * 决策前流程（2026-08-11 重构为 4 个页签，避免单页内容过载）：
+ * 1. 基础信息 —— 标题/类型/日期/可逆性
+ * 2. 问题与根因 —— 明确问题 + 5Why 根因（配合 root-cause-analysis 工具）
+ * 3. 选项生成与评估 —— 三维度发散（经验/观察推理/SCAMPER）→ 选项表格 → 决策矩阵拖拽评估
+ * 4. 决策确定 —— 最终选择 + 理由 + 预期 + 决策质量检查（信息/偏见/情绪/咨询）
  *
  * 特殊机制：
  * - 条件字段：如「基本不可逆」时强制要求填写退出机制；
@@ -38,7 +37,7 @@ export const decisionLogTemplate: FormTemplate = {
       label: '决策前',
       icon: '📝',
       description: '做决定时填写',
-      sectionIndices: [0, 1],
+      sectionIndices: [0, 1, 2, 3],
       completionFields: ['title', 'decision_type', 'decision_date', 'irreversibility', 'options_analysis', 'final_choice', 'core_reasons'],
     },
     {
@@ -46,7 +45,7 @@ export const decisionLogTemplate: FormTemplate = {
       label: '决策后',
       icon: '📊',
       description: '决策后1-7天填写',
-      sectionIndices: [2],
+      sectionIndices: [4],
       completionFields: ['execution_status'],
       completesRecord: true,
     },
@@ -55,7 +54,7 @@ export const decisionLogTemplate: FormTemplate = {
       label: '长期复盘',
       icon: '🔍',
       description: '记录完成后1个月填写',
-      sectionIndices: [3],
+      sectionIndices: [5],
       completionFields: ['result_vs_expected'],
       // 复盘在记录标记完成后 30 天解锁（_completedAt 由表单引擎在完成时写入），
       // 与投资检查清单按卖出日期解锁的冷静期机制一致
@@ -85,11 +84,10 @@ export const decisionLogTemplate: FormTemplate = {
       ],
     },
     {
-      id: 'pre_decision',
-      title: '决策前',
-      description: '决策前的分析和准备：先明确问题与根因，再从三个维度生成选项，最后用决策矩阵评估',
+      id: 'problem_root_cause',
+      title: '问题与根因',
+      description: '明确要解决的问题及其根本原因（决策方案必须建立在对根因的理解上）',
       fields: [
-        // 第一步：明确问题与根因（决策方案必须建立在对问题根因的理解上）
         { id: 'problem_statement', label: '已明确的问题', type: 'textarea', required: true, placeholder: '用一句话说清楚：要解决的核心问题是什么？', priority: 'required', hint: '决策前必须先明确问题本身——避免"用错误的方法解决正确的问题"' },
         { id: 'problem_root_cause', label: '问题的根因', type: 'textarea', required: true, placeholder: '导致这个问题的根本原因是什么？', priority: 'required', hint: '先用根因分析工具完成 5Why 连续追问（https://promatheus-ltsc.github.io/root-cause-analysis/），再把根因结论填到这里——只有针对根因的方案才可能真正解决问题' },
         { id: 'trigger_event', label: '触发事件', type: 'textarea', required: true, placeholder: '是什么事件触发了这个决策需求？', priority: 'required', hint: '描述促使你必须做出决策的事件或变化' },
@@ -97,11 +95,16 @@ export const decisionLogTemplate: FormTemplate = {
         { id: 'time_pressure', label: '时间压力', type: 'radio', required: true, priority: 'required', options: [
           { value: '紧急', label: '紧急' }, { value: '中等', label: '中等' }, { value: '充裕', label: '充裕' },
         ]},
-        // 第二步：三维度生成选项（引导发散，避免只想到一两个常规选项）
+      ],
+    },
+    {
+      id: 'option_generation',
+      title: '选项生成与评估',
+      description: '从三个维度发散选项，提炼成正式选项后用决策矩阵（成本×效果）评估',
+      fields: [
         { id: 'idea_experience', label: '选项生成 · 经验维度（立即反应）', type: 'textarea', priority: 'recommended', placeholder: '凭直觉/第一反应，你首先想到的做法是什么？过去遇到类似情况你是怎么做的？', hint: '写下脑海中第一个冒出来的方案，以及过往经验中可复用的做法', autocomplete: true },
         { id: 'idea_observation', label: '选项生成 · 观察/归纳/推理维度', type: 'textarea', priority: 'recommended', placeholder: '基于观察到的事实和规律，可以推导出哪些方案？', hint: '观察现状与数据 → 归纳规律 → 逻辑推理：别人/其他领域是怎么解决类似问题的？', autocomplete: true },
         { id: 'idea_innovation', label: '选项生成 · 创新维度（SCAMPER 法则）', type: 'textarea', priority: 'recommended', placeholder: '用 SCAMPER 逐条提问，生成打破常规的方案', hint: 'SCAMPER 法则：S 替代（Substitute）换人/换物/换流程？C 组合（Combine）能否合并两个方案？A 调整（Adapt）借鉴其他领域做法？M 修改（Modify）改变形态/规模/参数？P 他用（Put to other use）换个用途？E 消除（Eliminate）去掉某些部分？R 重排（Reverse）颠倒顺序/角色？', autocomplete: true },
-        // 选项梳理（表格）
         { id: 'options_analysis', label: '选项梳理', type: 'table', required: true, priority: 'required', hint: '把上面三个维度产生的想法提炼成 2-4 个正式选项填入表格', tableColumns: [
           { id: 'option_name', label: '选项', type: 'text', width: '20%' },
           { id: 'advantage', label: '优势', type: 'text', width: '25%' },
@@ -109,7 +112,6 @@ export const decisionLogTemplate: FormTemplate = {
           { id: 'resources', label: '所需资源', type: 'text', width: '15%' },
           { id: 'assessment', label: '评估', type: 'select', options: ['优选', '备选', '排除'], width: '15%' },
         ]},
-        // 第三步：决策矩阵评估（成本×效果，拖拽选项进入矩阵）
         {
           id: 'decision_matrix',
           label: '决策矩阵评估（成本 × 效果）',
@@ -119,19 +121,28 @@ export const decisionLogTemplate: FormTemplate = {
           optionsFrom: { fieldId: 'options_analysis', columnId: 'option_name' },
           dragQuadrants: DEFAULT_DRAG_QUADRANTS,
         },
-        // 信息评估
+      ],
+    },
+    {
+      id: 'final_decision',
+      title: '决策确定',
+      description: '结合矩阵评估结果做出最终选择，并完成决策质量检查',
+      fields: [
+        { id: 'final_choice', label: '最终选择', type: 'select', required: true, priority: 'required', placeholder: '请选择上方表格中的某个选项', hint: '优先从「事半功倍」「物有所值」象限的选项中挑选', optionsFrom: { fieldId: 'options_analysis', columnId: 'option_name' } },
+        { id: 'core_reasons', label: '核心理由', type: 'textarea', required: true, placeholder: '做出这个选择的核心理由', priority: 'required', hint: '列出最重要的2-3个理由' },
+        { id: 'expected_result', label: '预期结果', type: 'textarea', placeholder: '预期会有什么结果？', priority: 'recommended' },
+        { id: 'worst_case', label: '最坏情况', type: 'textarea', placeholder: '最坏的情况是什么？', priority: 'recommended', hint: '如果一切都往最坏方向发展会怎样？你能承受吗？' },
+        { id: 'exit_mechanism', label: '退出机制', type: 'textarea', placeholder: '什么情况下应该退出/调整？', priority: 'recommended' },
         { id: 'key_info', label: '关键信息', type: 'textarea', placeholder: '做决策需要的关键信息有哪些？', priority: 'recommended' },
         { id: 'info_reliability', label: '信息可靠性', type: 'radio', priority: 'recommended', options: [
           { value: '高', label: '高' }, { value: '中', label: '中' }, { value: '低', label: '低' },
         ]},
         { id: 'missing_info', label: '缺失信息', type: 'textarea', placeholder: '还缺少哪些重要信息？', priority: 'optional' },
-        // 认知偏见检查（勾选 = 确认未受该偏见影响）
         { id: 'cognitive_biases', label: '认知偏见检查', type: 'checkbox', priority: 'recommended', hint: '逐项确认本次决策未受该偏见影响（勾选 = 确认没有）。常见偏差：确认偏见（只找支持自己的证据）、锚定效应（被第一个数字锚定）、沉没成本（因已投入而不愿放弃）、过度自信（高估自己的判断）、损失厌恶（对损失更敏感）', options: [
           { value: '确认偏见', label: '已确认无「确认偏见」' }, { value: '锚定效应', label: '已确认无「锚定效应」' },
           { value: '沉没成本', label: '已确认无「沉没成本」' }, { value: '过度自信', label: '已确认无「过度自信」' },
           { value: '损失厌恶', label: '已确认无「损失厌恶」' },
         ]},
-        // 情绪状态
         { id: 'current_emotion', label: '当前情绪', type: 'radio', priority: 'recommended', options: [
           { value: '平静', label: '平静' }, { value: '焦虑', label: '焦虑' }, { value: '兴奋', label: '兴奋' },
           { value: '恐惧', label: '恐惧' }, { value: '愤怒', label: '愤怒' }, { value: '其他', label: '其他' },
@@ -140,19 +151,11 @@ export const decisionLogTemplate: FormTemplate = {
         { id: 'should_delay', label: '是否应延迟决策', type: 'radio', priority: 'optional', options: [
           { value: '是', label: '是' }, { value: '否', label: '否' },
         ]},
-        // 外部意见
         { id: 'consulted_advice', label: '咨询意见', type: 'textarea', placeholder: '咨询了谁？他们怎么说？', priority: 'recommended', autocomplete: true },
         { id: 'different_perspectives', label: '不同视角', type: 'textarea', placeholder: '有哪些不同的看法？', priority: 'optional' },
-        // 最终决策
         { id: 'decision_authority', label: '决策权限', type: 'radio', priority: 'optional', options: [
           { value: '完全在我', label: '完全在我' }, { value: '需要协商', label: '需要协商' }, { value: '受限外部条件', label: '受限外部条件' },
         ]},
-        { id: 'final_choice', label: '最终选择', type: 'select', required: true, priority: 'required', placeholder: '请选择上方表格中的某个选项', hint: '下拉选项自动同步「选项梳理」表格中已填写的选项名称', optionsFrom: { fieldId: 'options_analysis', columnId: 'option_name' } },
-        { id: 'core_reasons', label: '核心理由', type: 'textarea', required: true, placeholder: '做出这个选择的核心理由', priority: 'required', hint: '列出最重要的2-3个理由' },
-        { id: 'expected_result', label: '预期结果', type: 'textarea', placeholder: '预期会有什么结果？', priority: 'recommended' },
-        { id: 'worst_case', label: '最坏情况', type: 'textarea', placeholder: '最坏的情况是什么？', priority: 'recommended', hint: '如果一切都往最坏方向发展会怎样？你能承受吗？' },
-        { id: 'exit_mechanism', label: '退出机制', type: 'textarea', placeholder: '什么情况下应该退出/调整？', priority: 'recommended' },
-        // 参考资料（从附录移入）
         { id: 'similar_decisions', label: '类似决策', type: 'textarea', placeholder: '你过去做过哪些类似的决策？', priority: 'optional', autocomplete: true },
         { id: 'others_cases', label: '他人案例', type: 'textarea', placeholder: '别人在类似情况下是怎么做的？', priority: 'optional' },
         { id: 'frameworks_tools', label: '框架工具', type: 'textarea', placeholder: '用了哪些决策框架或工具？', priority: 'optional', autocomplete: true },
