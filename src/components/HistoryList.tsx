@@ -56,29 +56,33 @@ function getPhaseBadgeColor(phaseId: string): string {
   return 'bg-green-50 text-green-600';
 }
 
-/** 投资清单：持仓状态徽标（替代阶段徽标，信息更直观） */
+/** 投资清单：根据 record_role 返回对应状态徽标 */
 function getInvestmentBadge(record: FormRecord): { label: string; className: string } | null {
   if (record.templateId !== 'investment_checklist') return null;
   const d = record.data;
+  const role = d.record_role as string | undefined;
+
+  if (role === 'buy') {
+    if (record.status === 'draft') return null;
+    const lesson = String(d.buy_review_lesson ?? '').trim();
+    if (!lesson) return { label: '待复盘', className: 'bg-amber-100 text-amber-700' };
+    return null;
+  }
+  if (role === 'sell') {
+    if (record.status === 'draft') return null;
+    const lesson = String(d.sell_lesson ?? '').trim();
+    if (!lesson) return { label: '待复盘', className: 'bg-amber-100 text-amber-700' };
+    return null;
+  }
+  if (role === 'position') {
+    if (d.sold_out === true) return { label: '已清仓', className: 'bg-green-100 text-green-700' };
+    return { label: '持有中', className: 'bg-sky-100 text-sky-700' };
+  }
+  // 旧数据（无 record_role）：保留原有逻辑
   const code = String(d.buy_company_name ?? '').trim();
   if (!code) return null;
-
-  const sellPrice = d.sell_exit_price;
-  const hasTopSell = sellPrice !== undefined && sellPrice !== null && String(sellPrice).trim() !== '';
-  const sellLots = Array.isArray(d.merged_sell_lots) ? (d.merged_sell_lots as unknown[]) : [];
-
   if (d.sold_out === true) return { label: '已清仓', className: 'bg-green-100 text-green-700' };
-  if (hasTopSell) return { label: '待复盘', className: 'bg-amber-100 text-amber-700' };
-  if (sellLots.length > 0) {
-    const total = Number(d.merged_total_qty ?? d.buy_quantity ?? 0);
-    const sold = Number(d.merged_total_sell_qty ?? 0);
-    const remaining = isNaN(total - sold) ? 0 : total - sold;
-    return { label: `部分卖出 · 剩余 ${remaining > 0 ? remaining : 0}`, className: 'bg-blue-100 text-blue-600' };
-  }
-  // 买入已完成（核心买入逻辑已填）→ 持仓中
-  if (d.buy_company_name && d.buy_thesis) {
-    return { label: '持仓中', className: 'bg-sky-100 text-sky-700' };
-  }
+  if (d.buy_company_name && d.buy_thesis) return { label: '持仓中', className: 'bg-sky-100 text-sky-700' };
   return null;
 }
 
@@ -194,6 +198,18 @@ export default function HistoryList({
           {isDraftWithPhase ? (
             <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-indigo-50 text-indigo-600">
               继续填写 · {phase.label}
+            </span>
+          ) : investmentBadge?.label === '待复盘' ? (
+            <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-amber-100 text-amber-700">
+              已完成待复盘
+            </span>
+          ) : investmentBadge?.label === '持有中' ? (
+            <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-sky-100 text-sky-700">
+              持有中
+            </span>
+          ) : investmentBadge?.label === '已清仓' ? (
+            <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-green-100 text-green-700">
+              已完成
             </span>
           ) : (
             <span
