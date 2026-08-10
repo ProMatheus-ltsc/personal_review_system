@@ -14,7 +14,7 @@
  * 高效能人士的七个习惯复盘（2026-08-11 新增）：
  * - 自我管理矩阵 = 习惯3 要事第一（已有）
  * - h7_personal 个人方面 = 习惯1 积极主动（4 关键行动）+ 习惯2 以终为始
- * - h7_social 社交方面 = 习惯4 双赢思维（4 行动 + 6 种思维）+ 习惯5 知彼解己（2 关键技巧）+ 习惯6 统合综效（珍视差异、第三方案）
+ * - h7_social 社交方面 = 本周社交状况（职场关系/家庭，自深度复盘并入）+ 习惯4 双赢思维（4 行动 + 6 种思维）+ 习惯5 知彼解己（2 关键技巧）+ 习惯6 统合综效（珍视差异、第三方案）
  * 新增字段与现有内容重叠处，以现有架构为准（如要事第一复用自我管理矩阵，不重复添加）
  */
 import type { FormTemplate } from '@/types';
@@ -82,14 +82,6 @@ export const weeklyReviewTemplate: FormTemplate = {
         { id: 'lowpoint_event', label: '低谷事件', type: 'text', required: true, placeholder: '本周最不满意的事', priority: 'required' },
         { id: 'lowpoint_cause', label: '原因分析', type: 'textarea', placeholder: '深入分析失败/不满意的原因', priority: 'recommended', hint: '连续问5个为什么，找到根因' },
         { id: 'lowpoint_improvement', label: '改进方案', type: 'textarea', placeholder: '下次如何避免或改善？', priority: 'recommended', hint: '具体到可执行的行动步骤' },
-        { id: 'work_relationship_interaction', label: '职场关系互动', type: 'textarea', placeholder: '本周与同事/上级/下属的重要互动', priority: 'recommended' },
-        { id: 'work_relationship_change', label: '职场关系变化', type: 'radio', priority: 'recommended', options: [
-          { value: '改善', label: '改善' }, { value: '维持', label: '维持' }, { value: '恶化', label: '恶化' },
-        ]},
-        { id: 'work_relationship_focus', label: '职场关系关注点', type: 'textarea', placeholder: '下周需要重点关注的关系问题', priority: 'recommended', condition: { dependsOn: 'work_relationship_change', showWhen: '恶化' }, hint: '关系恶化时尤其需要制定修复计划' },
-        { id: 'work_relationship_repair', label: '关系修复计划', type: 'textarea', placeholder: '具体的修复行动和时间节点', priority: 'recommended', condition: { dependsOn: 'work_relationship_change', showWhen: '恶化' } },
-        { id: 'family_interaction', label: '家庭互动', type: 'textarea', placeholder: '本周与家人的重要互动', priority: 'recommended' },
-        { id: 'family_attention', label: '家庭关注', type: 'textarea', placeholder: '家庭方面需要关注的事项', priority: 'optional' },
         { id: 'new_knowledge', label: '新知识', type: 'textarea', placeholder: '本周学到的新知识或技能', priority: 'recommended', autocomplete: true },
         { id: 'valuable_input', label: '有价值的输入', type: 'textarea', placeholder: '本周读到/看到/听到的有价值内容', priority: 'optional', hint: '书籍、文章、播客、对话等' },
         { id: 'cognitive_upgrade', label: '认知升级', type: 'textarea', placeholder: '哪些认知发生了改变或升级？', priority: 'recommended', hint: '关注那些颠覆你既有认知的新观点' },
@@ -242,8 +234,17 @@ export const weeklyReviewTemplate: FormTemplate = {
     {
       id: 'h7_social',
       title: '高效能 · 社交方面',
-      description: '基于《高效能人士的七个习惯》公众领域的胜利：习惯4 双赢思维（4 行动 + 6 种思维）+ 习惯5 知彼解己（2 个关键技巧）+ 习惯6 统合综效（珍视差异、寻求第三方案）',
+      description: '先回顾本周社交状况（职场关系/家庭），再用《高效能人士的七个习惯》公众领域复盘：习惯4 双赢思维（4 行动 + 6 种思维）+ 习惯5 知彼解己（2 个关键技巧）+ 习惯6 统合综效（珍视差异、寻求第三方案）',
       fields: [
+        // —— 本周社交状况（自深度复盘并入） ——
+        { id: 'work_relationship_interaction', label: '职场关系互动', type: 'textarea', placeholder: '本周与同事/上级/下属的重要互动', priority: 'recommended' },
+        { id: 'work_relationship_change', label: '职场关系变化', type: 'radio', priority: 'recommended', options: [
+          { value: '改善', label: '改善' }, { value: '维持', label: '维持' }, { value: '恶化', label: '恶化' },
+        ]},
+        { id: 'work_relationship_focus', label: '职场关系关注点', type: 'textarea', placeholder: '下周需要重点关注的关系问题', priority: 'recommended', condition: { dependsOn: 'work_relationship_change', showWhen: '恶化' }, hint: '关系恶化时尤其需要制定修复计划' },
+        { id: 'work_relationship_repair', label: '关系修复计划', type: 'textarea', placeholder: '具体的修复行动和时间节点', priority: 'recommended', condition: { dependsOn: 'work_relationship_change', showWhen: '恶化' } },
+        { id: 'family_interaction', label: '家庭互动', type: 'textarea', placeholder: '本周与家人的重要互动', priority: 'recommended' },
+        { id: 'family_attention', label: '家庭关注', type: 'textarea', placeholder: '家庭方面需要关注的事项', priority: 'optional' },
         // —— 习惯4 双赢思维 ——
         {
           id: 'h7_ww_paradigms',
