@@ -382,12 +382,72 @@ export async function exportCompletedRecords(): Promise<string> {
 export async function importRecords(
   jsonString: string,
   strategy: 'merge' | 'replace'
-): Promise<{ imported: number; skipped: number }> {
-  const data = JSON.parse(jsonString);
+): Promise<{ imported: number; skipped: number; warnings: string[] }> {
+  let data: unknown;
+  try {
+    data = JSON.parse(jsonString);
+  } catch {
+    throw new Error('JSON 解析失败，文件内容不是有效的 JSON');
+  }
 
-  // Validate format
-  if (!data.appName || data.appName !== 'review-app' || !data.records) {
-    throw new Error('无效的备份文件格式');
+  if (
+    typeof data !== 'object' || data === null ||
+    !('appName' in data) || (data as Record<string, unknown>).appName !== 'review-app' ||
+    !('records' in data)
+  ) {
+    throw new Error('无效的备份文件格式（缺少 appName 或 records 字段）');
+  }
+
+  const payload = data as Record<string, unknown>;
+  const rawRecords = payload.records;
+  if (!Array.isArray(rawRecords)) {
+    throw new Error('备份文件中 records 不是数组');
+  }
+
+  const VALID_TEMPLATE_IDS = new Set([
+    'daily_review', 'weekly_review', 'monthly_review', 'annual_review',
+    'emotional_awareness', 'case_study', 'decision_log',
+    'investment_checklist_buy', 'investment_checklist_sell', 'investment_checklist_position',
+  ]);
+
+  const validRecords: FormRecord[] = [];
+  const warnings: string[] = [];
+
+  for (let i = 0; i < rawRecords.length; i++) {
+    const r = rawRecords[i];
+    if (typeof r !== 'object' || r === null) {
+      warnings.push(`第 ${i + 1} 条记录不是有效对象，已跳过`);
+      continue;
+    }
+    const rec = r as Record<string, unknown>;
+
+    if (typeof rec.id !== 'string' || !rec.id) {
+      warnings.push(`第 ${i + 1} 条记录缺少有效的 id，已跳过`);
+      continue;
+    }
+    if (typeof rec.templateId !== 'string' || !VALID_TEMPLATE_IDS.has(rec.templateId)) {
+      warnings.push(`第 ${i + 1} 条记录 templateId="${String(rec.templateId)}" 无效，已跳过`);
+      continue;
+    }
+    if (typeof rec.data !== 'object' || rec.data === null || Array.isArray(rec.data)) {
+      warnings.push(`第 ${i + 1} 条记录 data 字段不是有效对象，已跳过`);
+      continue;
+    }
+    const status = rec.status === 'completed' ? 'completed' : 'draft';
+    validRecords.push({
+      id: rec.id,
+      templateId: rec.templateId as FormRecord['templateId'],
+      title: typeof rec.title === 'string' ? rec.title : '',
+      data: rec.data as Record<string, unknown>,
+      status,
+      createdAt: typeof rec.createdAt === 'string' ? rec.createdAt : new Date().toISOString(),
+      updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : new Date().toISOString(),
+      ...(Array.isArray(rec.tags) ? { tags: rec.tags.filter((t): t is string => typeof t === 'string') } : {}),
+    });
+  }
+
+  if (validRecords.length === 0 && rawRecords.length > 0) {
+    throw new Error(`全部 ${rawRecords.length} 条记录校验失败，无法导入`);
   }
 
   const db = await initDB();
@@ -400,7 +460,7 @@ export async function importRecords(
   let skipped = 0;
 
   const tx = db.transaction('records', 'readwrite');
-  for (const record of data.records) {
+  for (const record of validRecords) {
     if (strategy === 'merge') {
       const existing = await tx.store.get(record.id);
       if (existing) {
@@ -413,17 +473,27 @@ export async function importRecords(
   }
   await tx.done;
 
-  // Also restore settings if present and strategy is replace
-  if (strategy === 'replace' && data.settings) {
-    const settingsTx = db.transaction('settings', 'readwrite');
-    for (const setting of data.settings) {
-      await settingsTx.store.put(setting);
+  if (strategy === 'replace' && payload.settings) {
+    if (Array.isArray(payload.settings)) {
+      const settingsTx = db.transaction('settings', 'readwrite');
+      for (const setting of payload.settings) {
+        if (typeof setting === 'object' && setting !== null && 'key' in setting) {
+          await settingsTx.store.put(setting);
+        }
+      }
+      await settingsTx.done;
+    } else {
+      warnings.push('settings 字段格式不正确，已忽略设置项恢复');
     }
-    await settingsTx.done;
+  }
+
+  const skippedByValidation = rawRecords.length - validRecords.length;
+  if (skippedByValidation > 0) {
+    warnings.unshift(`${skippedByValidation} 条记录未通过结构校验被跳过`);
   }
 
   invalidateRecordsCache();
-  return { imported, skipped };
+  return { imported, skipped, warnings };
 }
 
 /**
