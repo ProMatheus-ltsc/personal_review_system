@@ -13,6 +13,8 @@ import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import clsx from 'clsx';
 
+import { isInvestmentTemplate } from '@/constants/templateMeta';
+
 /** Determine the current phase index based on form data */
 function getCurrentPhaseIndex(phases: PhaseConfig[], formData: Record<string, unknown>, sections?: FormSection[]): number {
   for (let i = 0; i < phases.length; i++) {
@@ -58,7 +60,7 @@ function getPhaseBadgeColor(phaseId: string): string {
 
 /** 投资清单：根据 record_role 返回对应状态徽标 */
 function getInvestmentBadge(record: FormRecord): { label: string; className: string } | null {
-  if (record.templateId !== 'investment_checklist') return null;
+  if (!isInvestmentTemplate(record.templateId)) return null;
   const d = record.data;
   const role = d.record_role as string | undefined;
 
@@ -75,7 +77,11 @@ function getInvestmentBadge(record: FormRecord): { label: string; className: str
     return null;
   }
   if (role === 'position') {
-    if (d.sold_out === true) return { label: '已清仓', className: 'bg-green-100 text-green-700' };
+    if (d.sold_out === true) {
+      const lesson = String(d.position_lesson ?? '').trim();
+      if (!lesson) return { label: '已清仓待复盘', className: 'bg-amber-100 text-amber-700' };
+      return { label: '已完成', className: 'bg-green-100 text-green-700' };
+    }
     return { label: '持有中', className: 'bg-sky-100 text-sky-700' };
   }
   // 旧数据（无 record_role）：保留原有逻辑
@@ -110,6 +116,7 @@ export default function HistoryList({
   };
 
   const getRecordPhase = (record: FormRecord) => {
+    if (isInvestmentTemplate(record.templateId) && record.data.record_role) return null;
     const tmpl = templates.find((t) => t.id === record.templateId);
     if (!tmpl?.phases) return null;
     const idx = getCurrentPhaseIndex(tmpl.phases, record.data, tmpl.sections);
@@ -199,15 +206,15 @@ export default function HistoryList({
             <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-indigo-50 text-indigo-600">
               继续填写 · {phase.label}
             </span>
-          ) : investmentBadge?.label === '待复盘' ? (
+          ) : investmentBadge?.label === '待复盘' || investmentBadge?.label === '已清仓待复盘' ? (
             <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-amber-100 text-amber-700">
-              已完成待复盘
+              {investmentBadge.label}
             </span>
           ) : investmentBadge?.label === '持有中' ? (
             <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-sky-100 text-sky-700">
               持有中
             </span>
-          ) : investmentBadge?.label === '已清仓' ? (
+          ) : investmentBadge?.label === '已完成' ? (
             <span className="text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap bg-green-100 text-green-700">
               已完成
             </span>
