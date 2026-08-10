@@ -8,8 +8,26 @@ export const levelMap: Record<string, { level: string; color: string }> = {
   annual_review: { level: 'Level 3 · 年度复盘', color: 'bg-rose-50 text-rose-600' },
   case_study: { level: 'Level 2-3 · 深度复盘', color: 'bg-indigo-50 text-indigo-600' },
   decision_log: { level: 'Level 2 · 决策复盘', color: 'bg-amber-50 text-amber-600' },
-  investment_checklist: { level: 'Level 1 · 检查清单', color: 'bg-emerald-50 text-emerald-600' },
+  investment_checklist_buy: { level: 'Level 1 · 检查清单', color: 'bg-emerald-50 text-emerald-600' },
+  investment_checklist_sell: { level: 'Level 1 · 检查清单', color: 'bg-emerald-50 text-emerald-600' },
+  investment_checklist_position: { level: 'Level 1 · 检查清单', color: 'bg-emerald-50 text-emerald-600' },
 };
+
+/**
+ * 投资检查清单的所有 templateId
+ */
+export const INVESTMENT_TEMPLATE_IDS = [
+  'investment_checklist_buy',
+  'investment_checklist_sell',
+  'investment_checklist_position',
+] as const;
+
+/**
+ * 判断一个 templateId 是否属于投资检查清单系列
+ */
+export function isInvestmentTemplate(id: string): boolean {
+  return (INVESTMENT_TEMPLATE_IDS as readonly string[]).includes(id);
+}
 
 /**
  * 模板 ID 常量集合，用于类型安全的模板引用
@@ -22,5 +40,8 @@ export const TEMPLATE_IDS = {
   EMOTIONAL: 'emotional_awareness',
   CASE_STUDY: 'case_study',
   DECISION_LOG: 'decision_log',
-  INVESTMENT: 'investment_checklist',
+  INVESTMENT: 'investment_checklist_buy',
+  INVESTMENT_BUY: 'investment_checklist_buy',
+  INVESTMENT_SELL: 'investment_checklist_sell',
+  INVESTMENT_POSITION: 'investment_checklist_position',
 } as const;
