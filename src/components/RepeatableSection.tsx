@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { FormSection, FormField } from '@/types';
 import FieldRenderer from './FieldRenderer';
 import type { TemplateId } from '@/types';
@@ -12,6 +12,7 @@ interface RepeatableSectionProps {
   entries: RepeatableEntry[];
   onChange: (entries: RepeatableEntry[]) => void;
   templateId: TemplateId;
+  externalContext?: Record<string, unknown>;
 }
 
 /**
@@ -25,7 +26,11 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
   entries,
   onChange,
   templateId,
+  externalContext,
 }) => {
+  const computedFields = useMemo(() => {
+    return section.fields.filter((f) => f.computed);
+  }, [section.fields]);
   // Track which entries are expanded (by index)
   const [expandedIndices, setExpandedIndices] = useState<Set<number>>(() => {
     // If no entries, return empty set
@@ -120,10 +125,8 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
     return `第${index + 1}次检查${dateStr}`;
   };
 
-  // Get entry summary for collapsed state
   const getEntrySummary = (entry: RepeatableEntry): string => {
     const parts: string[] = [];
-    // Look for radio/select fields to show key status
     const statusFields = section.fields.filter(
       (f) => (f.type === 'radio' || f.type === 'select') && entry[f.id]
     );
@@ -133,6 +136,10 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
         const option = f.options?.find((o) => o.value === val);
         parts.push(option ? option.label : val);
       }
+    });
+    computedFields.forEach((f) => {
+      const cv = computeValueForField(f, entry);
+      if (cv && parts.length < 3) parts.push(cv);
     });
     return parts.join(' · ');
   };
@@ -148,13 +155,30 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
     return dependsOnValue === showWhen;
   };
 
+  const computeValueForField = useCallback(
+    (field: FormField, entry: RepeatableEntry): string | undefined => {
+      if (!field.computed) return undefined;
+      const values: Record<string, unknown> = {};
+      field.computed.dependsOn.forEach((dep) => {
+        values[dep] = entry[dep];
+      });
+      if (field.computed.externalDeps && externalContext) {
+        field.computed.externalDeps.forEach((dep) => {
+          values[dep] = externalContext[dep];
+        });
+      }
+      return field.computed.formula(values);
+    },
+    [externalContext]
+  );
+
   const renderEntryField = (field: FormField, entry: RepeatableEntry, entryIndex: number) => {
     if (!isFieldVisible(field, entry)) return null;
 
     const value = entry[field.id];
     const fieldKey = `${section.id}_${entryIndex}_${field.id}`;
+    const computedValue = computeValueForField(field, entry);
 
-    // No-op register for type compatibility (not used in controlled mode)
     const noopRegister = (() => ({
       name: field.id,
       onChange: () => {},
@@ -170,6 +194,7 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
           value={value}
           onChange={(val) => handleFieldChange(entryIndex, field.id, val)}
           templateId={templateId}
+          computedValue={computedValue}
           controlled
         />
       </div>
