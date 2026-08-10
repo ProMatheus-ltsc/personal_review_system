@@ -1037,6 +1037,35 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           </div>
                       )}
 
+                      {/* 决策日志：决策确定页签展示选项梳理表格参照（只读），便于对照选择 */}
+                      {template.id === 'decision_log' && activeSection.id === 'final_decision' && (() => {
+                        const rows = watch('options_analysis') as Record<string, string>[] | undefined;
+                        const valid = (rows ?? []).filter((r) => r.option_name && String(r.option_name).trim());
+                        if (valid.length === 0) {
+                          return (
+                            <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg mb-4">
+                              ⚠️ <span className="font-semibold">尚未填写选项</span>：请先到「选项生成与评估」页签，在「选项梳理」中填写 2-4 个选项，再回来做最终选择。
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="bg-slate-100 border border-slate-200 text-slate-700 text-sm p-3 rounded-lg mb-4">
+                            <div className="font-semibold mb-2">📋 选项梳理参照（来自「选项生成与评估」页签，只读）</div>
+                            <div className="space-y-1.5">
+                              {valid.map((r, i) => (
+                                <div key={`${r.option_name}-${i}`} className="text-xs leading-relaxed">
+                                  <span className="font-medium text-slate-800">{i + 1}. {r.option_name}</span>
+                                  {r.target_cause && <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] ${r.target_cause === '根因' ? 'bg-emerald-100 text-emerald-700' : r.target_cause === '表因' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>针对{r.target_cause}</span>}
+                                  {r.advantage && <span className="text-slate-500 ml-1.5">优势：{r.advantage}</span>}
+                                  {r.assessment && <span className="text-slate-500 ml-1.5">评估：{r.assessment}</span>}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="text-slate-500 text-xs mt-2">下拉「最终选择」已按决策矩阵推荐排序（事半功倍置顶）</div>
+                          </div>
+                        );
+                      })()}
+
                       {/* 决策日志：选项生成与评估页签顶部展示问题/表因/根因参照（来自 JSON 导入） */}
                       {template.id === 'decision_log' && activeSection.id === 'option_generation' && (() => {
                         const st = String(watch('problem_statement') ?? '').trim();
