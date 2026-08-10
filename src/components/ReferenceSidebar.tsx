@@ -31,11 +31,13 @@ const TEMPLATE_DISPLAY: Record<string, { icon: string; name: string }> = {
   annual_review: { icon: '🎯', name: '年度复盘' },
   case_study: { icon: '📋', name: '实战案例' },
   decision_log: { icon: '🔄', name: '决策日志' },
-  investment_checklist: { icon: '✅', name: '投资检查清单' },
+  investment_checklist_buy: { icon: '✅', name: '投资买入' },
+  investment_checklist_sell: { icon: '✅', name: '投资卖出' },
+  investment_checklist_position: { icon: '✅', name: '投资持仓' },
   emotional_awareness: { icon: '🧠', name: '情绪觉察' },
 };
 
-const IMPORTANT_TEMPLATES = ['case_study', 'decision_log', 'investment_checklist', 'emotional_awareness'];
+const IMPORTANT_TEMPLATES = ['case_study', 'decision_log', 'investment_checklist_buy', 'investment_checklist_sell', 'investment_checklist_position', 'emotional_awareness'];
 
 // ====== Date Range Helpers ======
 
