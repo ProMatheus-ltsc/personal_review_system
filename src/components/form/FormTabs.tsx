@@ -31,7 +31,8 @@ export default function FormTabs({
 }: FormTabsProps) {
   return (
     <div className="mb-6 border-b border-gray-200">
-      <nav className="flex overflow-x-auto -mb-px scrollbar-hide" role="tablist" aria-label="表单部分">
+      {/* flex-wrap：页签过多时自动换行，避免超出视口「消失」（如周复盘 9 个页签） */}
+      <nav className="flex flex-wrap -mb-px" role="tablist" aria-label="表单部分">
         {sections.map((section, index) => {
           if (shouldHide(index)) return null;
           const locked = isLocked(index);
@@ -53,7 +54,7 @@ export default function FormTabs({
                     onTabChange(index - 1);
                   }
                 }}
-                className={`whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition ${hasError ? 'relative' : ''} ${
+                className={`whitespace-nowrap px-3.5 py-2.5 text-sm font-medium border-b-2 transition ${hasError ? 'relative' : ''} ${
                     locked
                         ? 'border-transparent text-gray-300 cursor-not-allowed'
                         : index === activeTab
