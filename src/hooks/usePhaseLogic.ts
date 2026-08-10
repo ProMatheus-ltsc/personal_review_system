@@ -18,6 +18,8 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { FormSection, PhaseConfig } from '@/types';
 import { getCurrentPhaseIndex, getPhaseTimeLockInfo, getSectionPhaseIndex, isFieldEmpty } from '@/utils/formValidation';
 
+import { isInvestmentTemplate } from '@/constants/templateMeta';
+
 export interface UsePhaseLogicParams {
   /** 阶段配置（无阶段模板为 undefined） */
   phases?: PhaseConfig[];
@@ -144,7 +146,7 @@ export function usePhaseLogic({
     // 特殊处理：部分卖出后的记录（sell_status=partial），虽然 currentPhaseIndex 可能在卖出阶段，
     // 但持有阶段应该保持可编辑（用户需要为剩余持仓添加持有检查），因此 visitedMaxPhase 不超过持有阶段
     let effectiveMaxPhase = currentPhaseIndex;
-    if (initialData.sell_status === 'partial' && templateId === 'investment_checklist') {
+    if (initialData.sell_status === 'partial' && isInvestmentTemplate(templateId)) {
       const holdingPhaseIdx = phases.findIndex((p) => p.id === 'holding');
       if (holdingPhaseIdx >= 0 && currentPhaseIndex > holdingPhaseIdx) {
         effectiveMaxPhase = holdingPhaseIdx;
@@ -152,7 +154,7 @@ export function usePhaseLogic({
     }
     setVisitedMaxPhase(effectiveMaxPhase);
     // 部分卖出/撤销后的记录，卖出日期被清空了，重新打开时默认填充今天日期
-    if (templateId === 'investment_checklist' && !initialData.sell_date) {
+    if (isInvestmentTemplate(templateId) && !initialData.sell_date) {
       setValue('sell_date', new Date().toISOString().slice(0, 10), { shouldDirty: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
