@@ -10,6 +10,12 @@
  * 特殊机制：
  * - 条件字段：事件结果为「失败」时自动展示原因分析和改进方式字段
  * - 可折叠区域：附录模块默认折叠，减少视觉压力
+ *
+ * 高效能人士的七个习惯复盘（2026-08-11 新增）：
+ * - 自我管理矩阵 = 习惯3 要事第一（已有）
+ * - h7_personal 个人方面 = 习惯1 积极主动（4 关键行动）+ 习惯2 以终为始
+ * - h7_social 社交方面 = 习惯4 双赢思维（4 行动 + 6 种思维）+ 习惯5 知彼解己（2 关键技巧）+ 习惯6 统合综效（珍视差异、第三方案）
+ * 新增字段与现有内容重叠处，以现有架构为准（如要事第一复用自我管理矩阵，不重复添加）
  */
 import type { FormTemplate } from '@/types';
 import { DEFAULT_QUADRANTS } from '@/constants/quadrant';
@@ -163,6 +169,142 @@ export const weeklyReviewTemplate: FormTemplate = {
           priority: 'optional',
           hint: '本周哪些第一象限危机，本可以通过提前投入第二象限预防？下周如何调整节奏？',
           placeholder: '例：项目延期本可通过提前 2 天规划避免；下周把规划时间固定到周三晚',
+          autocomplete: true,
+        },
+      ],
+    },
+    {
+      id: 'h7_personal',
+      title: '高效能 · 个人方面',
+      description: '基于《高效能人士的七个习惯》个人领域的胜利：习惯1 积极主动（4 个关键行动）+ 习惯2 以终为始（习惯3 要事第一见上方自我管理矩阵）',
+      fields: [
+        // —— 习惯1 积极主动：4 个关键行动复盘 ——
+        {
+          id: 'h7_proactive_zone',
+          label: '积极主动 · 关键行动①影响圈聚焦',
+          type: 'radio',
+          priority: 'recommended',
+          hint: '积极主动的关键是聚焦影响圈——把精力放在自己可控、能改变的事情上',
+          options: [
+            { value: '影响圈', label: '主要投入影响圈（可控之事）' },
+            { value: '关注圈', label: '主要陷入关注圈（不可控之事）' },
+            { value: '两者相当', label: '两者相当' },
+          ],
+        },
+        {
+          id: 'h7_proactive_language',
+          label: '积极主动 · 关键行动②语言觉察',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '把「我不得不」换成「我选择」：本周哪些被动语言暴露了被动心态？',
+          hint: '被动语言：「我不得不…」「没办法」「都是他害的」；主动语言：「我选择…」「我可以…」——语言是心态的信号',
+          autocomplete: true,
+        },
+        {
+          id: 'h7_proactive_responsibility',
+          label: '积极主动 · 关键行动③结果责任',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '遇到挫折时，你选择归咎环境，还是承担结果并主动行动？举例说明',
+          hint: '回应（Response-ability）= 选择回应的能力：在刺激与回应之间，你有选择的自由',
+          autocomplete: true,
+        },
+        {
+          id: 'h7_proactive_promise',
+          label: '积极主动 · 关键行动④承诺兑现',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '本周对己对人的承诺是否兑现？下周要兑现哪些承诺？',
+          hint: '对自己信守承诺是建立自信的开始，对他人信守承诺是建立信任的开始',
+          autocomplete: true,
+        },
+        // —— 习惯2 以终为始 ——
+        {
+          id: 'h7_bwe_alignment',
+          label: '以终为始 · 使命对齐',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '本周的行动服务于你的长期愿景/个人使命吗？哪些事偏离了「终点」？',
+          hint: '先在心中创造结果，再在现实中实现它——对照你的使命宣言/长期目标回看本周',
+          autocomplete: true,
+        },
+        {
+          id: 'h7_bwe_roles',
+          label: '以终为始 · 角色检视',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '以重要角色（职业/家庭/健康/学习/朋友）视角回看本周：哪个角色被忽略了？',
+          hint: '用你的关键角色来定义「终点」，看本周在每个角色上的投入是否平衡',
+          autocomplete: true,
+        },
+      ],
+    },
+    {
+      id: 'h7_social',
+      title: '高效能 · 社交方面',
+      description: '基于《高效能人士的七个习惯》公众领域的胜利：习惯4 双赢思维（4 行动 + 6 种思维）+ 习惯5 知彼解己（2 个关键技巧）+ 习惯6 统合综效（珍视差异、寻求第三方案）',
+      fields: [
+        // —— 习惯4 双赢思维 ——
+        {
+          id: 'h7_ww_paradigms',
+          label: '双赢思维 · 六种人际思维自检',
+          type: 'checkbox',
+          priority: 'recommended',
+          hint: '勾选本周在重要互动中出现的思维范式；双赢（利人利己）是成熟互赖关系的基石',
+          options: [
+            { value: '利人利己（双赢）', label: '利人利己（双赢）' },
+            { value: '损人利己（赢-输）', label: '损人利己（赢-输）' },
+            { value: '损己利人（输-赢）', label: '损己利人（输-赢）' },
+            { value: '两败俱伤（输-输）', label: '两败俱伤（输-输）' },
+            { value: '独善其身（赢）', label: '独善其身（赢）' },
+            { value: '好聚好散（无交易）', label: '好聚好散（无交易）' },
+          ],
+        },
+        {
+          id: 'h7_ww_actions',
+          label: '双赢思维 · 四个行动复盘',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '①换位思考 ②关注利益而非立场 ③探索双方都赢的方案 ④达成清晰协议——本周做到哪些？哪一步最薄弱？',
+          hint: '双赢四行动：先弄清对方真正想要的 → 聚焦共同利益而非各自立场 → 创造双方都赢的第三选择 → 用清晰协议固定结果',
+          autocomplete: true,
+        },
+        // —— 习惯5 知彼解己 ——
+        {
+          id: 'h7_sfu_empathy',
+          label: '知彼解己 · 关键技巧一：移情倾听',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '本周倾听他人时，是否先做到「理解」再表达？有没有急于评判或给建议的时刻？',
+          hint: '移情倾听：不仅听内容，还要听感受与意图；先诊断、后开方，是提升影响力的第一杠杆',
+          autocomplete: true,
+        },
+        {
+          id: 'h7_sfu_diagnose',
+          label: '知彼解己 · 关键技巧二：先诊断后开方',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '给别人建议前，是否先充分了解他的处境与需求？本周有没有「没听完就开方子」？',
+          hint: '医生先诊断再开药——在理解对方之前提出的建议，往往只是自说自话',
+          autocomplete: true,
+        },
+        // —— 习惯6 统合综效 ——
+        {
+          id: 'h7_syn_value_diff',
+          label: '统合综效 · 珍视差异',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '本周与观点不同的人互动时，把差异看作威胁还是机会？',
+          hint: '珍视差异是统合综效的前提：1+1>2 来自不同视角的碰撞，而非相似意见的叠加',
+          autocomplete: true,
+        },
+        {
+          id: 'h7_syn_third_way',
+          label: '统合综效 · 寻求第三方案',
+          type: 'textarea',
+          priority: 'recommended',
+          placeholder: '遇到分歧时，是否尝试寻求超越双方原方案的「第三方案」？结果如何？',
+          hint: '第三方案不是你的方案也不是我的方案，而是共创的新选择——创造性合作的标志',
           autocomplete: true,
         },
       ],
