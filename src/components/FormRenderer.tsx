@@ -933,22 +933,56 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           </div>
                       )}
 
-                      {/* 周复盘：填写「下周规划」时回显自我管理矩阵的第二象限要事（要事第一 · 上下文桥接） */}
+                      {/* 周复盘：填写「下周规划」时回显自我管理矩阵的第二象限要事，可一键填入核心目标（要事第一 · 上下文桥接） */}
                       {template.id === 'weekly_review' && activeSection.id === 'next_week' && (() => {
                         const matrix = watch('weekly_matrix') as { q2?: { text?: string }[] } | undefined;
                         const q2 = (matrix?.q2 ?? []).filter((it) => it && it.text && String(it.text).trim());
+                        const fillGoal = (text: string) => {
+                          const g1 = watch('core_goal1') as string | undefined;
+                          const g2 = watch('core_goal2') as string | undefined;
+                          const g3 = watch('core_goal3') as string | undefined;
+                          if (!g1) {
+                            setValue('core_goal1', text, { shouldDirty: true });
+                          } else if (!g2) {
+                            setValue('core_goal2', text, { shouldDirty: true });
+                          } else if (!g3) {
+                            setValue('core_goal3', text, { shouldDirty: true });
+                          } else {
+                            showToast('核心目标已填满，请手动调整', 'info');
+                            return;
+                          }
+                          showToast(`已填入核心目标：${text}`, 'success');
+                        };
                         if (q2.length === 0) {
                           return (
                             <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg mb-4">
-                              ⚠️ <span className="font-semibold">尚未填写矩阵第二象限</span>：建议先回到「自我管理矩阵」页签，把下周最重要（不紧急但重要）的事归位到第二象限，再回来从这里挑选核心目标。
+                              ⚠️ <span className="font-semibold">尚未填写矩阵第二象限</span>：建议先回到「自我管理矩阵」页签，把下周最重要（不紧急但重要）的事归位到第二象限，再回来一键填入核心目标。
                             </div>
                           );
                         }
                         return (
                           <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm p-3 rounded-lg mb-4">
-                            📌 <span className="font-semibold">自我管理矩阵 · 第二象限要事：</span>
-                            <span className="font-medium">{q2.map((it) => it.text).join('、')}</span>
-                            <div className="text-emerald-600 mt-0.5">要事第一：核心目标优先从这些要事中挑选（可写入手填框或直接参考）</div>
+                            <div>
+                              📌 <span className="font-semibold">自我管理矩阵 · 第二象限要事</span>
+                              <span className="text-emerald-600 ml-1">（点击要事可直接填入核心目标，自动落到第一个空位）</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {q2.map((it, idx) => {
+                                const text = String(it.text).trim();
+                                return (
+                                  <button
+                                    key={`${text}-${idx}`}
+                                    type="button"
+                                    onClick={() => fillGoal(text)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-400 transition"
+                                    title="点击填入核心目标"
+                                  >
+                                    <span className="text-emerald-500 font-bold leading-none">+</span>
+                                    {text}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       })()}
