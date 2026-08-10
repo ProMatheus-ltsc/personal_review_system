@@ -760,8 +760,15 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             : undefined;
   };
 
-  /** 计算 optionsFrom 动态选项（从表格列取值去重）；决策日志 final_choice 按决策矩阵推荐排序 */
-  const computeDynamicOptions = (field: FormField): { value: string; label: string }[] | undefined => {
+  /** 决策日志：根因分析 JSON 导入 → 回填问题/根因/表因（只读字段） */
+  const handleJsonImport = useCallback((data: { problemStatement: string; rootCause: string; surfaceCause: string }) => {
+    setValue('problem_statement', data.problemStatement, { shouldDirty: true });
+    setValue('problem_root_cause', data.rootCause, { shouldDirty: true });
+    setValue('problem_surface_cause', data.surfaceCause, { shouldDirty: true });
+    showToast('已从 JSON 导入问题、根因与表因', 'success');
+  }, [setValue, showToast]);
+
+  /** 计算 optionsFrom 动态选项（从表格列取值去重）；决策日志 final_choice 按决策矩阵推荐排序 */  const computeDynamicOptions = (field: FormField): { value: string; label: string }[] | undefined => {
     if (!field.optionsFrom) return undefined;
     const tableData = watch(field.optionsFrom.fieldId) as Record<string, string>[] | undefined;
     if (!Array.isArray(tableData)) return undefined;
@@ -829,6 +836,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             watchedHintValue={watchedHintValue}
             computedValue={computedValue}
             dynamicOptions={dynamicOptions}
+            onJsonImport={field.type === 'jsonImport' ? handleJsonImport : undefined}
             {...(isControlledType
                 ? {
                     value: watch(field.id),

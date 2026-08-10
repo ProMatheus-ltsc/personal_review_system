@@ -37,6 +37,7 @@ import {
   TableInput,
   QuadrantInput,
   DragMatrixInput,
+  JsonImportInput,
   ComputedDisplay,
   type InputFieldProps,
 } from '@/components/form/FieldInputs';
@@ -56,6 +57,8 @@ interface FieldRendererProps {
   dynamicOptions?: { value: string; label: string }[];
   /** When true, use value+onChange for all field types (controlled mode) */
   controlled?: boolean;
+  /** jsonImport：解析成功后回填问题/根因/表因 */
+  onJsonImport?: (data: { problemStatement: string; rootCause: string; surfaceCause: string }) => void;
 }
 
 const baseInputClass =
@@ -73,6 +76,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
   computedValue,
   dynamicOptions,
   controlled,
+  onJsonImport,
 }) {
   const isOptional = field.priority === 'optional';
   const isRequired = field.priority === 'required';
@@ -174,6 +178,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
     value,
     onChange,
     dynamicOptions,
+    readOnly: field.readOnly,
     autocomplete: shouldAutocomplete
       ? {
           enabled: true,
@@ -204,6 +209,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
       case 'table': return <TableInput {...commonInputProps} />;
       case 'quadrant': return <QuadrantInput {...commonInputProps} />;
       case 'dragMatrix': return <DragMatrixInput {...commonInputProps} />;
+      case 'jsonImport': return <JsonImportInput {...commonInputProps} onJsonImport={onJsonImport} />;
       default: return null;
     }
   };

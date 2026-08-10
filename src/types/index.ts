@@ -9,7 +9,7 @@
  * - FormRecord: 存储在 IndexedDB 中的复盘记录
  * - TemplateId: 所有支持的模板 ID 联合类型
  */
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table' | 'quadrant' | 'dragMatrix';
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table' | 'quadrant' | 'dragMatrix' | 'jsonImport';
 
 /** 四象限矩阵的象限标识（参考《高效能人士的七个习惯》时间管理矩阵） */
 export type QuadrantKey = 'q1' | 'q2' | 'q3' | 'q4';
@@ -98,6 +98,9 @@ export interface FormField {
 
   /** Field importance level - controls visibility and layout */
   priority?: 'required' | 'recommended' | 'optional';
+
+  /** 只读字段：展示已存值，禁止手动编辑（如决策日志的问题/根因，仅通过 JSON 导入填充） */
+  readOnly?: boolean;
 
   /** Conditional display logic - show this field only when condition is met */
   condition?: {

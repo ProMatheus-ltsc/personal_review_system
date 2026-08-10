@@ -32,6 +32,17 @@ export interface InputFieldProps {
   };
   /** select 动态选项覆盖（optionsFrom 生成） */
   dynamicOptions?: { value: string; label: string }[];
+  /** jsonImport：解析成功后把结果回填到问题/根因/表因字段 */
+  onJsonImport?: (data: { problemStatement: string; rootCause: string; surfaceCause: string }) => void;
+  /** 只读（不可编辑，如 JSON 导入填充的问题/根因/表因） */
+  readOnly?: boolean;
+}
+
+/** jsonImport 导入结果类型 */
+export interface JsonImportResult {
+  problemStatement: string;
+  rootCause: string;
+  surfaceCause: string;
 }
 
 /** 通用 register 校验选项（required + pattern） */
@@ -50,7 +61,7 @@ export function autoResize(e: React.FormEvent<HTMLTextAreaElement>) {
 }
 
 /** 文本输入（支持自动补全下拉） */
-export function TextInput({ field, inputClass, register, controlled, value, onChange, autocomplete }: InputFieldProps) {
+export function TextInput({ field, inputClass, register, controlled, value, onChange, autocomplete, readOnly }: InputFieldProps) {
   if (controlled) {
     return (
       <input
@@ -59,6 +70,7 @@ export function TextInput({ field, inputClass, register, controlled, value, onCh
         placeholder={field.placeholder}
         value={(value as string) ?? ''}
         onChange={(e) => onChange?.(e.target.value)}
+        disabled={readOnly}
       />
     );
   }
@@ -71,6 +83,7 @@ export function TextInput({ field, inputClass, register, controlled, value, onCh
           className={inputClass}
           placeholder={field.placeholder}
           {...regProps}
+          disabled={readOnly}
           onFocus={autocomplete.onFocus}
           onBlur={(e) => {
             regProps.onBlur(e);
@@ -91,13 +104,14 @@ export function TextInput({ field, inputClass, register, controlled, value, onCh
       type="text"
       className={inputClass}
       placeholder={field.placeholder}
+      disabled={readOnly}
       {...register?.(field.id, registerRules(field))}
     />
   );
 }
 
 /** 多行文本输入（支持自动补全下拉） */
-export function TextareaInput({ field, inputClass, register, controlled, value, onChange, autocomplete }: InputFieldProps) {
+export function TextareaInput({ field, inputClass, register, controlled, value, onChange, autocomplete, readOnly }: InputFieldProps) {
   if (controlled) {
     return (
       <textarea
@@ -107,6 +121,7 @@ export function TextareaInput({ field, inputClass, register, controlled, value, 
         onInput={autoResize}
         value={(value as string) ?? ''}
         onChange={(e) => onChange?.(e.target.value)}
+        disabled={readOnly}
       />
     );
   }
@@ -120,6 +135,7 @@ export function TextareaInput({ field, inputClass, register, controlled, value, 
           style={{ minHeight: '80px' }}
           onInput={autoResize}
           {...regProps}
+          disabled={readOnly}
           onFocus={autocomplete.onFocus}
           onBlur={(e) => {
             regProps.onBlur(e);
@@ -136,13 +152,14 @@ export function TextareaInput({ field, inputClass, register, controlled, value, 
     );
   }
   return (
-    <textarea
-      className={inputClass}
-      placeholder={field.placeholder}
-      style={{ minHeight: '80px' }}
-      onInput={autoResize}
-      {...register?.(field.id, registerRules(field))}
-    />
+      <textarea
+        className={inputClass}
+        placeholder={field.placeholder}
+        style={{ minHeight: '80px' }}
+        onInput={autoResize}
+        disabled={readOnly}
+        {...register?.(field.id, registerRules(field))}
+      />
   );
 }
 
@@ -744,6 +761,70 @@ export function DragMatrixInput({ field, value, onChange, dynamicOptions }: Inpu
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** JSON 导入组件（jsonImport）：粘贴根因分析工具导出的 JSON，解析后回填问题/根因/表因字段 */
+export function JsonImportInput({ field, inputClass, onJsonImport }: InputFieldProps) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const handleParse = () => {
+    const raw = text.trim();
+    if (!raw) {
+      setError('请先粘贴 JSON 内容');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const desc = parsed.problemDescription ?? parsed.problem_description ?? parsed.problemStatement ?? parsed.problem_statement;
+      const roots = parsed.rootCauses ?? parsed.root_causes ?? [];
+      const surfaces = parsed.surfaceCauses ?? parsed.surface_causes ?? [];
+      const toText = (v: unknown) =>
+        Array.isArray(v) ? v.filter(Boolean).map((x) => String(x).trim()).filter(Boolean).join('\n') : v ? String(v) : '';
+      const rootText = toText(roots);
+      const surfaceText = toText(surfaces);
+      if (!desc && !rootText && !surfaceText) {
+        setError('未识别到有效字段：problemDescription / rootCauses / surfaceCauses');
+        return;
+      }
+      onJsonImport?.({
+        problemStatement: desc ? String(desc).trim() : '',
+        rootCause: rootText,
+        surfaceCause: surfaceText,
+      });
+      setError(null);
+      setText('');
+    } catch {
+      setError('JSON 解析失败，请检查格式（可先用 JSON 校验工具验证）');
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-dashed border-indigo-300 bg-indigo-50/40 p-3">
+      <p className="text-xs font-semibold text-indigo-800 mb-1">📥 {field.label}</p>
+      {field.hint && <p className="text-[11px] text-gray-500 mb-2">{field.hint}</p>}
+      <textarea
+        className={inputClass}
+        placeholder={field.placeholder}
+        style={{ minHeight: '72px', fontFamily: 'monospace', fontSize: '12px' }}
+        value={text}
+        onChange={(e) => { setText(e.target.value); setError(null); }}
+      />
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={handleParse}
+          className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+        >
+          解析并导入
+        </button>
+        {error && <span className="text-xs text-red-500">{error}</span>}
+      </div>
+      <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+        支持格式：{'{"problemDescription": "…", "rootCauses": ["…"], "surfaceCauses": ["…"]}'}（来自根因分析工具复制）
+      </p>
     </div>
   );
 }
