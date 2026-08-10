@@ -36,6 +36,7 @@ import { isInvestmentTemplate } from '@/constants/templateMeta';
 import { useCooldownSettings } from '@/hooks/useCooldownSettings';
 import { useLinkedRecords } from '@/hooks/useLinkedRecords';
 import { EMPTY_QUADRANT_MATRIX } from '@/constants/quadrant';
+import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
 import {
@@ -152,10 +153,13 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   // Build default values from template fields
   const computedDefaults = useCallback(() => {
     if (initialData) {
+      // 日/周复盘：旧「睡前三问」/旧矩阵字段 → 新结构 的读取时幂等迁移
+      // （daily_tomorrow_priority→daily_q2_focus、daily_most_valuable→矩阵Q2、weekly_q2_next→core_goal1）
+      const migrated = migrateLegacyMatrixData(template.id, initialData);
       // 投资检查清单：幂等初始化 Trade + Review 三层结构（兼容旧单据）
       if (isInvestmentTemplate(template.id)) {
-        const initialized = ensureTradesInitialized(initialData);
-        const defaults: Record<string, any> = { ...initialData, ...initialized };
+        const initialized = ensureTradesInitialized(migrated);
+        const defaults: Record<string, any> = { ...migrated, ...initialized };
         // 对空白日期字段补默认值（auto_today），确保复盘日期、卖出日期等自动填入今天
         const now = new Date();
         template.sections.forEach((s) => {
@@ -173,7 +177,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       // 编辑已有记录：对「空白日期字段」补默认值（auto_today / auto_week_start / auto_week_end）。
       // 保证已解锁的复盘日期（买入/卖出/投资周期复盘）自动填入今天，
       // 周复盘开始/结束日期自动填入本周；已有值不覆盖。
-      const defaults: Record<string, any> = { ...initialData };
+      const defaults: Record<string, any> = { ...migrated };
       const now = new Date();
       template.sections.forEach((s) => {
         if (s.repeatable) return;
@@ -281,7 +285,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
       try {
         const prevRecord = await getLatestCompletedRecord('weekly_review');
         if (cancelled || !prevRecord) return;
-        const prevData = prevRecord.data as Record<string, unknown>;
+        // 上周记录可能是旧结构（weekly_q2_next 而非 core_goal1），先做读取时迁移
+        const prevData = migrateLegacyMatrixData('weekly_review', prevRecord.data as Record<string, unknown>);
         // Map: core_goal1/2/3 → goal1/2/3
         if (prevData.core_goal1) {
           setValue('goal1', prevData.core_goal1 as string, { shouldDirty: false });

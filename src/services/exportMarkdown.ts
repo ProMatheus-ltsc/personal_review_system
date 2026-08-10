@@ -13,6 +13,7 @@
  */
 import { FormRecord, FormTemplate, FormField } from '@/types';
 import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
+import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 
 /** 将 ISO 日期字符串格式化为中文日期（如「2024年3月15日」） */
 function formatDate(dateStr: string): string {
@@ -87,6 +88,8 @@ function formatFieldValue(field: FormField, value: unknown): string {
 
 export function exportToMarkdown(record: FormRecord, template: FormTemplate): string {
   const lines: string[] = [];
+  // 旧结构数据读取时迁移（日/周复盘：睡前三问/旧字段 → 新结构），保证导出内容完整
+  const data = migrateLegacyMatrixData(template.id, record.data);
 
   lines.push(`# ${template.name}`);
   lines.push('');
@@ -103,7 +106,7 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
     // Handle repeatable sections
     if (section.repeatable) {
       const entriesKey = `${section.id}_entries`;
-      const entries = record.data[entriesKey] as Record<string, unknown>[] | undefined;
+      const entries = data[entriesKey] as Record<string, unknown>[] | undefined;
       if (!entries || entries.length === 0) {
         lines.push('（无记录）');
         lines.push('');
@@ -161,7 +164,7 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
     }
 
     for (const field of section.fields) {
-      const value = record.data[field.id];
+      const value = data[field.id];
 
       if (field.type === 'table' && Array.isArray(value) && field.tableColumns) {
         const columns = field.tableColumns;

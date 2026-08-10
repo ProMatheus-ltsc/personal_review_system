@@ -17,6 +17,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { FormRecord, FormTemplate, FormField } from '@/types';
 import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
+import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -91,6 +92,8 @@ function formatFieldValue(field: FormField, value: unknown): string {
 }
 
 function buildHtml(record: FormRecord, template: FormTemplate): string {
+  // 旧结构数据读取时迁移（日/周复盘：睡前三问/旧字段 → 新结构），保证导出内容完整
+  const data = migrateLegacyMatrixData(template.id, record.data);
   let html = `
     <div style="font-family: system-ui, -apple-system, sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.6;">
       <h1 style="font-size: 24px; margin-bottom: 8px; font-weight: 700;">${template.name}</h1>
@@ -107,7 +110,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
     // Handle repeatable sections
     if (section.repeatable) {
       const entriesKey = `${section.id}_entries`;
-      const entries = record.data[entriesKey] as Record<string, unknown>[] | undefined;
+      const entries = data[entriesKey] as Record<string, unknown>[] | undefined;
       if (!entries || entries.length === 0) {
         html += `<div style="margin-bottom: 10px; font-size: 14px; color: #999;">\uff08\u65e0\u8bb0\u5f55\uff09</div>`;
       } else {
@@ -163,7 +166,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
     }
 
     for (const field of section.fields) {
-      const value = record.data[field.id];
+      const value = data[field.id];
 
       if (field.type === 'table' && Array.isArray(value) && field.tableColumns) {
         const columns = field.tableColumns;
