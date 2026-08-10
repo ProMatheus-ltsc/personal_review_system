@@ -16,7 +16,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import type { FormTemplate, FormRecord, FormField } from '@/types';
 import { useSaveRecord } from '@/hooks/useDB';
-import { getLatestCompletedRecord } from '@/services/db';
+import { getLatestCompletedRecord, getAllRecords } from '@/services/db';
 import { useToast } from '@/hooks/useToast';
 import { useInvestmentLinked } from '@/hooks/useInvestmentLinked';
 import { validateRequiredFields, getSectionPhaseIndex, isFieldEmpty, getPhaseTimeLockInfo } from '@/utils/formValidation';
@@ -36,6 +36,7 @@ import { isInvestmentTemplate } from '@/constants/templateMeta';
 import { useCooldownSettings } from '@/hooks/useCooldownSettings';
 import { useLinkedRecords } from '@/hooks/useLinkedRecords';
 import { EMPTY_QUADRANT_MATRIX, EMPTY_DRAG_MATRIX } from '@/constants/quadrant';
+import type { DragMatrixValue, QuadrantMatrix } from '@/types';
 import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
@@ -143,6 +144,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
   const [showQualityCheck, setShowQualityCheck] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [loadedFromPrevWeek, setLoadedFromPrevWeek] = useState(false);
+  /** 周复盘：本周日复盘汇总摘要（情绪/精力/第二象限承诺） */
+  const [dailyWeekSummary, setDailyWeekSummary] = useState<{ date: string; mood: string; energy: string; q2: string }[] | null>(null);
   /** 是否已经对只读阶段回看做过一次 Toast 提示（后续不再重复弹） */
   const [readonlyToastShown, setReadonlyToastShown] = useState(false);
   const { toast, showToast, hideToast } = useToast();
@@ -321,6 +324,57 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           }
         }
         setLoadedFromPrevWeek(true);
+      } catch {
+        // silently ignore - non-critical feature
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [template.id, initialData, setValue]);
+
+  // === 周复盘：自动汇总本周日复盘（情绪/精力趋势 + 每日四象限合并到周矩阵） ===
+  useEffect(() => {
+    if (template.id !== 'weekly_review' || initialData) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await getAllRecords('daily_review');
+        if (cancelled) return;
+        const start = watch('start_date') as string | undefined;
+        const end = watch('end_date') as string | undefined;
+        if (!start || !end) return;
+        const days = all
+            .map((r) => r.data as Record<string, unknown> | undefined)
+            .filter((d) => {
+              const date = d && d.daily_date ? String(d.daily_date) : '';
+              return date && date >= start && date <= end;
+            })
+            .sort((a, b) => String(a!.daily_date).localeCompare(String(b!.daily_date)));
+        if (days.length === 0) return;
+
+        // 每日四象限 → 合并到本周矩阵（按象限聚合 + 文本去重）
+        const merged: QuadrantMatrix = { q1: [], q2: [], q3: [], q4: [] };
+        (['q1', 'q2', 'q3', 'q4'] as const).forEach((k) => {
+          const seen = new Set<string>();
+          days.forEach((d) => {
+            const dm = d!.daily_matrix as Partial<QuadrantMatrix> | undefined;
+            (dm?.[k] ?? []).forEach((it) => {
+              const text = it && it.text ? String(it.text).trim() : '';
+              if (text && !seen.has(text)) {
+                seen.add(text);
+                merged[k].push({ id: `daily-${k}-${seen.size}`, text });
+              }
+            });
+          });
+        });
+        setValue('weekly_matrix', merged, { shouldDirty: false });
+
+        // 摘要：每日情绪/精力/第二象限承诺（供 banner 展示）
+        setDailyWeekSummary(days.map((d) => ({
+          date: String(d!.daily_date),
+          mood: (d!.daily_mood as string) || '',
+          energy: (d!.daily_energy as string) || '',
+          q2: (d!.daily_q2_focus as string) || '',
+        })));
       } catch {
         // silently ignore - non-critical feature
       }
@@ -706,15 +760,39 @@ const FormRenderer: React.FC<FormRendererProps> = ({
             : undefined;
   };
 
-  /** 计算 optionsFrom 动态选项（从表格列取值去重） */
+  /** 计算 optionsFrom 动态选项（从表格列取值去重）；决策日志 final_choice 按决策矩阵推荐排序 */
   const computeDynamicOptions = (field: FormField): { value: string; label: string }[] | undefined => {
     if (!field.optionsFrom) return undefined;
     const tableData = watch(field.optionsFrom.fieldId) as Record<string, string>[] | undefined;
     if (!Array.isArray(tableData)) return undefined;
-    return tableData
+    const base = tableData
         .map((row) => row[field.optionsFrom!.columnId])
         .filter((v): v is string => !!v && v.trim() !== '')
         .map((v) => ({ value: v, label: v }));
+
+    // 决策日志「最终选择」：结合决策矩阵（成本×效果）推荐排序 —— 事半功倍置顶（推荐）、物有所值次之、劳民伤财/无关痛痒靠后、未评估最后
+    if (template.id === 'decision_log' && field.id === 'final_choice') {
+      const dm = watch('decision_matrix') as Partial<DragMatrixValue> | undefined;
+      if (dm) {
+        const tagByQuadrant: Record<string, { label: string; order: number }> = {
+          q1: { label: '⭐ 事半功倍（推荐）', order: 0 },
+          q2: { label: '💰 物有所值', order: 1 },
+          q3: { label: '⚖️ 无关痛痒', order: 2 },
+          q4: { label: '🚫 劳民伤财', order: 3 },
+        };
+        const rank: Record<string, { label: string; order: number }> = {};
+        (['q1', 'q2', 'q3', 'q4'] as const).forEach((qk) => {
+          (dm[qk] ?? []).forEach((text) => {
+            if (!rank[text]) rank[text] = { ...tagByQuadrant[qk] };
+          });
+        });
+        return base
+            .map((o) => rank[o.value] ? { ...o, label: `${rank[o.value].label} · ${o.value}`, order: rank[o.value].order } : { ...o, label: o.value, order: 99 })
+            .sort((a, b) => a.order - b.order)
+            .map(({ order, ...rest }) => rest);
+      }
+    }
+    return base;
   };
 
   /**
@@ -930,6 +1008,24 @@ const FormRenderer: React.FC<FormRendererProps> = ({
                           <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 rounded-lg mb-4 flex items-center gap-2">
                             <span>📋</span>
                             <span>目标已从上周复盘的「下周规划」自动加载，你可以直接编辑调整</span>
+                          </div>
+                      )}
+
+                      {/* 周复盘：本周日复盘汇总（情绪/精力趋势 + 第二象限承诺），每日四象限已合并到「自我管理矩阵」 */}
+                      {dailyWeekSummary && dailyWeekSummary.length > 0 && activeSection.id === 'weekly_review' && (
+                          <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 text-sm p-3 rounded-lg mb-4">
+                            <div className="font-semibold mb-1.5">📊 本周日复盘汇总（{dailyWeekSummary.length} 天）</div>
+                            <div className="space-y-1">
+                              {dailyWeekSummary.map((d) => (
+                                <div key={d.date} className="text-xs leading-relaxed">
+                                  <span className="font-medium text-indigo-700">{d.date}</span>
+                                  <span className="text-indigo-500 ml-1.5">情绪：{d.mood || '—'}</span>
+                                  <span className="text-indigo-500 ml-2">精力：{d.energy || '—'}</span>
+                                  {d.q2 && <span className="text-indigo-600 ml-2">第二象限要事：{d.q2}</span>}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="text-indigo-500 text-xs mt-1.5">每日四象限事项已自动合并到「自我管理矩阵」页签，可继续编辑调整。</div>
                           </div>
                       )}
 

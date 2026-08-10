@@ -183,6 +183,7 @@ export function buildTemplateRecords(): FormRecord[] {
     deadline: daysAgo(10),
     irreversibility: '基本不可逆',
     problem_statement: '现有前端方案维护成本持续上升，是否应该切换技术栈',
+    problem_surface_cause: '维护成本上升：每次改动都要跨模块打补丁',
     problem_root_cause: '早期选型未充分评估长期维护性，团队随业务扩张分工细化',
     trigger_event: '现有方案维护成本上升',
     cost_of_no_decision: '继续累积技术债',
@@ -199,9 +200,9 @@ export function buildTemplateRecords(): FormRecord[] {
       { scamper: 'R 重排', guide: '能否颠倒顺序、角色或因果关系？', solution: '其余模块渐进迁移，重排上线顺序' },
     ],
     options_analysis: [
-      { option_name: '切换新框架', advantage: '长期维护成本低', risk: '迁移成本高', resources: '2 周人力', assessment: '优选' },
-      { option_name: '维持现状', advantage: '无迁移成本', risk: '技术债累积', resources: '无', assessment: '备选' },
-      { option_name: '渐进式迁移', advantage: '风险可控', risk: '周期较长', resources: '4 周人力', assessment: '优选' },
+      { option_name: '切换新框架', target_cause: '根因', advantage: '长期维护成本低', risk: '迁移成本高', resources: '2 周人力', assessment: '优选' },
+      { option_name: '维持现状', target_cause: '表因', advantage: '无迁移成本', risk: '技术债累积', resources: '无', assessment: '备选' },
+      { option_name: '渐进式迁移', target_cause: '两者兼治', advantage: '风险可控', risk: '周期较长', resources: '4 周人力', assessment: '优选' },
     ],
     decision_matrix: {
       q1: ['渐进式迁移'],

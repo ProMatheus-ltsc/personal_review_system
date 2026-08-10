@@ -86,10 +86,11 @@ export const decisionLogTemplate: FormTemplate = {
     {
       id: 'problem_root_cause',
       title: '问题与根因',
-      description: '明确要解决的问题及其根本原因（决策方案必须建立在对根因的理解上）',
+      description: '明确要解决的问题，区分表因与根因（决策方案必须针对根因，否则治标不治本）',
       fields: [
         { id: 'problem_statement', label: '已明确的问题', type: 'textarea', required: true, placeholder: '用一句话说清楚：要解决的核心问题是什么？', priority: 'required', hint: '决策前必须先明确问题本身——避免"用错误的方法解决正确的问题"' },
-        { id: 'problem_root_cause', label: '问题的根因', type: 'textarea', required: true, placeholder: '导致这个问题的根本原因是什么？', priority: 'required', hint: '先用根因分析工具完成 5Why 连续追问（https://promatheus-ltsc.github.io/root-cause-analysis/），再把根因结论填到这里——只有针对根因的方案才可能真正解决问题' },
+        { id: 'problem_surface_cause', label: '问题的表因（表面原因）', type: 'textarea', required: true, placeholder: '表面直接看到的原因是什么？', priority: 'required', hint: '表因 = 问题的表面/直接原因，如"交付延期"的表因是"需求变更频繁"；表因易察觉，但只解决表因往往治标不治本' },
+        { id: 'problem_root_cause', label: '问题的根因（根本原因）', type: 'textarea', required: true, placeholder: '导致问题的根本原因是什么？', priority: 'required', hint: '先用根因分析工具完成 5Why 连续追问（https://promatheus-ltsc.github.io/root-cause-analysis/），再把根因结论填到这里——只有针对根因的方案才可能真正解决问题' },
         { id: 'trigger_event', label: '触发事件', type: 'textarea', required: true, placeholder: '是什么事件触发了这个决策需求？', priority: 'required', hint: '描述促使你必须做出决策的事件或变化' },
         { id: 'cost_of_no_decision', label: '不决策的代价', type: 'textarea', placeholder: '如果不做决策，会有什么后果？', priority: 'recommended' },
         { id: 'time_pressure', label: '时间压力', type: 'radio', required: true, priority: 'required', options: [
@@ -125,12 +126,13 @@ export const decisionLogTemplate: FormTemplate = {
             { scamper: 'R 重排', guide: '能否颠倒顺序、角色或因果关系？', solution: '' },
           ],
         },
-        { id: 'options_analysis', label: '选项梳理', type: 'table', required: true, priority: 'required', hint: '把上面三个维度产生的想法提炼成 2-4 个正式选项填入表格', tableColumns: [
-          { id: 'option_name', label: '选项', type: 'text', width: '20%' },
-          { id: 'advantage', label: '优势', type: 'text', width: '25%' },
-          { id: 'risk', label: '风险', type: 'text', width: '25%' },
-          { id: 'resources', label: '所需资源', type: 'text', width: '15%' },
-          { id: 'assessment', label: '评估', type: 'select', options: ['优选', '备选', '排除'], width: '15%' },
+        { id: 'options_analysis', label: '选项梳理', type: 'table', required: true, priority: 'required', hint: '把上面三个维度产生的想法提炼成 2-4 个正式选项；「针对」列标注该方案主要解决表因还是根因——优先选择针对根因的方案', tableColumns: [
+          { id: 'option_name', label: '选项', type: 'text', width: '18%' },
+          { id: 'target_cause', label: '针对', type: 'select', options: ['表因', '根因', '两者兼治'], width: '12%' },
+          { id: 'advantage', label: '优势', type: 'text', width: '22%' },
+          { id: 'risk', label: '风险', type: 'text', width: '22%' },
+          { id: 'resources', label: '所需资源', type: 'text', width: '13%' },
+          { id: 'assessment', label: '评估', type: 'select', options: ['优选', '备选', '排除'], width: '13%' },
         ]},
         {
           id: 'decision_matrix',

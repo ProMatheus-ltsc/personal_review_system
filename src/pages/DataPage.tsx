@@ -15,9 +15,12 @@ import {
   exportCompletedRecords,
   importRecords,
   getRecordStats,
+  getAllRecords,
   getSetting,
   setSetting,
 } from '@/services/db';
+import { templates } from '@/templates';
+import { exportRecordsAsMarkdown, generateAnnualReport } from '@/services/batchExport';
 import { StatsPanel } from '@/components/stats';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
@@ -52,6 +55,13 @@ export default function DataPage() {
   });
   const [cooldownSaved, setCooldownSaved] = useState(false);
   const [cooldownError, setCooldownError] = useState<string | null>(null);
+  // 文档导出（批量 Markdown / 年度报告）
+  const [docTemplate, setDocTemplate] = useState<string>('all');
+  const [docYear, setDocYear] = useState<string>(String(new Date().getFullYear()));
+  const [docExporting, setDocExporting] = useState(false);
+  const [docMessage, setDocMessage] = useState<string | null>(null);
+  // 可选年份：今年 + 前 4 年
+  const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i));
 
   useEffect(() => {
     loadData();
@@ -116,6 +126,51 @@ export default function DataPage() {
       setLastBackup(new Date().toISOString());
     } finally {
       setExporting(false);
+    }
+  };
+
+  /** 批量导出为 Markdown 文档（按模板筛选） */
+  const handleDocExport = async () => {
+    setDocExporting(true);
+    setDocMessage(null);
+    try {
+      const all = docTemplate === 'all' ? await getAllRecords() : await getAllRecords(docTemplate);
+      const md = exportRecordsAsMarkdown(all, templates);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `review-export-${docTemplate === 'all' ? 'all' : docTemplate}-${new Date().toISOString().slice(0, 10)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setDocMessage(`已导出 ${all.length} 条记录为 Markdown`);
+    } catch {
+      setDocMessage('导出失败，请重试');
+    } finally {
+      setDocExporting(false);
+    }
+  };
+
+  /** 生成年度复盘报告（Markdown） */
+  const handleAnnualReport = async () => {
+    setDocExporting(true);
+    setDocMessage(null);
+    try {
+      const all = await getAllRecords();
+      const year = Number(docYear);
+      const md = generateAnnualReport(all, year);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `annual-review-${year}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setDocMessage(`已生成 ${year} 年度复盘报告`);
+    } catch {
+      setDocMessage('生成失败，请重试');
+    } finally {
+      setDocExporting(false);
     }
   };
 
@@ -244,12 +299,65 @@ export default function DataPage() {
           </div>
         </section>
 
+        {/* 文档导出：批量 Markdown + 年度复盘报告 */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span>📄</span> 文档导出
+          </h2>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+            <p className="text-sm text-gray-600">
+              将记录导出为可读的 Markdown 文档（适合归档到知识库），或一键生成年度复盘报告。
+            </p>
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">选择模板</p>
+                <select
+                    value={docTemplate}
+                    onChange={(e) => setDocTemplate(e.target.value)}
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="all">全部模板</option>
+                  {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">选择年份（年度报告）</p>
+                <select
+                    value={docYear}
+                    onChange={(e) => setDocYear(e.target.value)}
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                >
+                  {years.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                  onClick={handleDocExport}
+                  disabled={docExporting}
+                  className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                批量导出 Markdown
+              </button>
+              <button
+                  onClick={handleAnnualReport}
+                  disabled={docExporting}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                生成年度复盘报告
+              </button>
+            </div>
+            {docMessage && <p className="text-sm text-green-600">{docMessage}</p>}
+          </div>
+        </section>
+
         {/* Import */}
         <section className="mb-6">
           <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
             <span>📥</span> 导入数据
-          </h2>
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
+          </h2>          <div className="bg-white border border-gray-200 rounded-lg p-4">
             <p className="text-sm text-gray-600 mb-4">
               从备份文件恢复数据。
             </p>
