@@ -551,6 +551,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
         }
       }
       showToast(msg, 'success');
+      setTimeout(() => setShowQualityCheck(true), 1500);
       onSave?.(record);
     }
   }, [canMarkComplete, performSave, phases, template.name, getValues, initialData, showToast, onSave]);
