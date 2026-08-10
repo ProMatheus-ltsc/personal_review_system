@@ -213,9 +213,12 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
     field.conditionalHints && watchedHintValue && field.conditionalHints[watchedHintValue]
   ) || field.hint;
 
-  /** 把 hint 文本中的 http(s) 链接渲染为可点击链接（如根因分析工具地址） */
+  /**
+   * 把 hint 文本中的 http(s) 链接渲染为可点击链接（如根因分析工具地址）。
+   * URL 结尾不包含中英文括号/标点（避免 "……/）" 被吞进链接导致 404）。
+   */
   const renderHintText = (text: string) => {
-    const parts = text.split(/(https?:\/\/[^\s]+)/g);
+    const parts = text.split(/(https?:\/\/[^\s（）()，,。；;]+)/g);
     return parts.map((part, i) =>
       /^https?:\/\//.test(part) ? (
         <a
@@ -234,7 +237,9 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
 
   const renderHint = () => {
     if (!effectiveHint) return null;
-    const isLong = effectiveHint.length > 60;
+    // 含链接的 hint 不自动截断（保证 URL 完整可点击）；纯文本长 hint 才折叠
+    const hasUrl = /https?:\/\//.test(effectiveHint);
+    const isLong = effectiveHint.length > 60 && !hasUrl;
     const displayText = isLong && !hintExpanded
       ? effectiveHint.slice(0, 60) + '...'
       : effectiveHint;
