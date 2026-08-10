@@ -28,6 +28,7 @@ import {
   filterInvestmentRecords,
   type InvestmentExportFilter,
 } from '@/services/investmentExport';
+import { isInvestmentTemplate, INVESTMENT_TEMPLATE_IDS } from '@/constants/templateMeta';
 
 type SortOrder = 'newest' | 'oldest';
 type StatusFilter = 'all' | 'draft' | 'completed';
@@ -61,17 +62,17 @@ export default function HistoryPage() {
   const [exportResult, setExportResult] = useState<string | null>(null);
 
   // 当前投资清单记录（仅模板筛选，不过滤搜索/状态，让导出条件独立可控）
+  const isInvestmentActive = useMemo(() => {
+    return activeTemplateId !== undefined && isInvestmentTemplate(activeTemplateId);
+  }, [activeTemplateId]);
+
   const investmentRecords = useMemo(() => {
-    return records.filter((r) => {
-      if (r.templateId !== 'investment_checklist') return false;
-      const role = r.data.record_role as string | undefined;
-      return role === 'position' || role === 'buy' || role === 'sell';
-    });
+    return records.filter((r) => isInvestmentTemplate(r.templateId));
   }, [records]);
 
   // 导出过滤条件下符合的记录数（实时预览）
   const exportMatchCount = useMemo(() => {
-    if (activeTemplateId !== 'investment_checklist') return 0;
+    if (!isInvestmentActive) return 0;
     const filter: InvestmentExportFilter = {
       code: exportCode,
       dateFrom: exportDateFrom,
@@ -112,17 +113,12 @@ export default function HistoryPage() {
   const filteredRecords = useMemo(() => {
     let result = [...records];
 
-    // Filter by template
     if (activeTemplateId) {
-      result = result.filter((r) => r.templateId === activeTemplateId);
-    }
-
-    // 投资检查清单：仅展示新模型单据（record_role = position/buy/sell），旧格式不展示
-    if (activeTemplateId === 'investment_checklist') {
-      result = result.filter((r) => {
-        const role = r.data.record_role as string | undefined;
-        return role === 'position' || role === 'buy' || role === 'sell';
-      });
+      if (isInvestmentTemplate(activeTemplateId)) {
+        result = result.filter((r) => isInvestmentTemplate(r.templateId));
+      } else {
+        result = result.filter((r) => r.templateId === activeTemplateId);
+      }
     }
 
     // Filter by status
@@ -202,6 +198,7 @@ export default function HistoryPage() {
   }, [selectedIds, removeMany, refresh, exitSelectionMode]);
 
   const activeTemplate = templates.find((t) => t.id === activeTemplateId);
+  const activeDisplayName = isInvestmentActive ? '投资检查清单' : activeTemplate?.name;
 
   return (
     <div>
@@ -214,9 +211,9 @@ export default function HistoryPage() {
           ← 返回
         </button>
         <h1 className="text-2xl font-bold text-gray-900 flex-1">
-          {activeTemplate ? `${activeTemplate.name} 记录` : '历史记录'}
+          {activeDisplayName ? `${activeDisplayName} 记录` : '历史记录'}
         </h1>
-        {!selectionMode && !(viewMode === 'table' && activeTemplateId === 'investment_checklist') ? (
+        {!selectionMode && !(viewMode === 'table' && isInvestmentActive) ? (
           <button
             onClick={enterSelectionMode}
             className="px-3 py-1.5 text-sm font-medium rounded-lg border text-gray-600 hover:bg-gray-50 transition-colors"
@@ -238,7 +235,7 @@ export default function HistoryPage() {
         {/* Search */}
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
 
-        {/* Template tabs */}
+        {/* Template tabs — 投资三个模板合并为一个 tab */}
         <div className="flex overflow-x-auto gap-2 pb-1 scrollbar-hide">
             <button
               onClick={() => setActiveTemplateId(undefined)}
@@ -251,20 +248,28 @@ export default function HistoryPage() {
             >
               全部
             </button>
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTemplateId(t.id)}
-                className={clsx(
-                  'px-3 py-1.5 text-sm rounded-lg font-medium transition-colors',
-                  activeTemplateId === t.id
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white border text-gray-600 hover:bg-gray-50'
-                )}
-              >
-                {t.icon} {t.name}
-              </button>
-            ))}
+            {templates
+              .filter((t) => !isInvestmentTemplate(t.id) || t.id === INVESTMENT_TEMPLATE_IDS[0])
+              .map((t) => {
+                const isInvTab = isInvestmentTemplate(t.id);
+                const tabId = isInvTab ? INVESTMENT_TEMPLATE_IDS[0] : t.id;
+                const tabLabel = isInvTab ? '✅ 投资检查清单' : `${t.icon} ${t.name}`;
+                const isActive = isInvTab ? isInvestmentActive : activeTemplateId === t.id;
+                return (
+                  <button
+                    key={tabId}
+                    onClick={() => setActiveTemplateId(tabId)}
+                    className={clsx(
+                      'px-3 py-1.5 text-sm rounded-lg font-medium transition-colors',
+                      isActive
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white border text-gray-600 hover:bg-gray-50'
+                    )}
+                  >
+                    {tabLabel}
+                  </button>
+                );
+              })}
           </div>
 
         {/* Sort & Status filters */}
@@ -320,7 +325,7 @@ export default function HistoryPage() {
             </div>
 
             {/* 投资记录视图切换（列表 / 表格） */}
-            {activeTemplateId === 'investment_checklist' && (
+            {isInvestmentActive && (
               <div className="flex rounded-lg border overflow-hidden">
                 {(
                   [
@@ -347,7 +352,7 @@ export default function HistoryPage() {
       </div>
 
       {/* 投资清单导出面板 */}
-      {activeTemplateId === 'investment_checklist' && (
+      {isInvestmentActive && (
         <div className="mb-6 bg-indigo-50/60 border border-indigo-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-lg">📤</span>
@@ -432,7 +437,7 @@ export default function HistoryPage() {
       )}
 
       {/* Record list */}
-      {viewMode === 'table' && activeTemplateId === 'investment_checklist' ? (
+      {viewMode === 'table' && isInvestmentActive ? (
         <InvestmentTable records={filteredRecords} onSelect={handleSelect} />
       ) : (
         <HistoryList
