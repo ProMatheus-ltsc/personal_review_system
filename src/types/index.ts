@@ -123,7 +123,7 @@ export interface PhaseConfig {
 }
 
 /** 所有模板 ID 的字面量联合类型 */
-export type TemplateId = 'daily_review' | 'weekly_review' | 'monthly_review' | 'annual_review' | 'emotional_awareness' | 'case_study' | 'decision_log' | 'investment_checklist';
+export type TemplateId = 'daily_review' | 'weekly_review' | 'monthly_review' | 'annual_review' | 'emotional_awareness' | 'case_study' | 'decision_log' | 'investment_checklist_buy' | 'investment_checklist_sell' | 'investment_checklist_position';
 
 export interface FormTemplate {
   id: TemplateId;
