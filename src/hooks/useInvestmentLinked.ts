@@ -28,6 +28,8 @@ import {
 } from '@/services/investmentMerge';
 import { isFieldEmpty } from '@/utils/formValidation';
 
+import { isInvestmentTemplate } from '@/constants/templateMeta';
+
 interface InvestmentLinkedOptions {
   /** 模板 id（仅 investment_checklist 生效） */
   templateId: string;
@@ -61,7 +63,7 @@ export function useInvestmentLinked({
   const [linkedPosition, setLinkedPosition] = useState<FormRecord | undefined>(undefined);
 
   useEffect(() => {
-    if (templateId !== 'investment_checklist' || !positionId) {
+    if (!isInvestmentTemplate(templateId) || !positionId) {
       setLinkedPosition(undefined);
       return;
     }
@@ -77,7 +79,7 @@ export function useInvestmentLinked({
   // 卖出单：注入「加权平均买入日期 + 平均买入价」派生字段（幂等，不覆盖已有值）。
   // 持仓周期按加权平均买入时间计算（Σ数量×买入日期 / Σ数量，与加权平均买入价同思路）
   useEffect(() => {
-    if (templateId !== 'investment_checklist' || recordRole !== 'sell' || !linkedPosition) return;
+    if (!isInvestmentTemplate(templateId) || recordRole !== 'sell' || !linkedPosition) return;
     const buyLots = Array.isArray(linkedPosition.data.merged_buy_lots)
         ? (linkedPosition.data.merged_buy_lots as { date?: string; qty?: string | number }[])
         : [];
@@ -101,7 +103,7 @@ export function useInvestmentLinked({
   // 30 秒自动保存（skipMerge=true）不触发联动，避免填写中被打断
   const linkSaveAfterSave = useCallback(
       async (record: FormRecord, skipMerge: boolean): Promise<void> => {
-        if (templateId !== 'investment_checklist' || skipMerge) return;
+        if (!isInvestmentTemplate(templateId) || skipMerge) return;
         if (recordRole !== 'buy' && recordRole !== 'sell') return;
         const code = String(record.data.buy_company_name ?? '').trim();
         if (!code) return;
@@ -128,7 +130,11 @@ export function useInvestmentLinked({
         !isFieldEmpty(record.data.buy_thesis) &&
         record.data.buy_understand_business === true;
     if (!buyingDone) return undefined;
-    const allRecords = await getAllRecords('investment_checklist');
+    const allRecords = (await Promise.all([
+      getAllRecords('investment_checklist_buy'),
+      getAllRecords('investment_checklist_sell'),
+      getAllRecords('investment_checklist_position'),
+    ])).flat();
     const position = await ensurePositionForBuyRecord(record, allRecords);
     if (position) {
       showToast(`买入记录已完成，已自动建立 ${code} 的持仓记录`, 'success');
@@ -143,7 +149,11 @@ export function useInvestmentLinked({
       code: string,
       cooldownDays: number
   ): Promise<void> {
-    const refreshed = await getAllRecords('investment_checklist');
+    const refreshed = (await Promise.all([
+      getAllRecords('investment_checklist_buy'),
+      getAllRecords('investment_checklist_sell'),
+      getAllRecords('investment_checklist_position'),
+    ])).flat();
     const { buyRecords, sellRecords } = getLinkedRecords(position, refreshed);
     const updated = syncPositionFromLinked(position, buyRecords, sellRecords);
     await saveRecord(updated);
