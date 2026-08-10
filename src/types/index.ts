@@ -9,7 +9,7 @@
  * - FormRecord: 存储在 IndexedDB 中的复盘记录
  * - TemplateId: 所有支持的模板 ID 联合类型
  */
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table' | 'quadrant';
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table' | 'quadrant' | 'dragMatrix';
 
 /** 四象限矩阵的象限标识（参考《高效能人士的七个习惯》时间管理矩阵） */
 export type QuadrantKey = 'q1' | 'q2' | 'q3' | 'q4';
@@ -46,6 +46,26 @@ export interface QuadrantConfig {
   adviceClass: string;
   /** 第二象限（重点）外发光 ring class */
   ringClass?: string;
+}
+
+/** 拖拽决策矩阵的值结构：每个象限一组选项文本（选项来自表格列，如 options_analysis.option_name） */
+export type DragMatrixValue = Record<QuadrantKey, string[]>;
+
+/** 拖拽决策矩阵的象限配置（成本×效果评估） */
+export interface DragMatrixQuadrantConfig {
+  key: QuadrantKey;
+  /** 象限名称，如「事半功倍」 */
+  label: string;
+  /** 象限描述（成本/效果说明），如「成本低 · 效果好」 */
+  desc: string;
+  /** 处理建议 */
+  advice: string;
+  /** 色点 class */
+  dotClass: string;
+  /** 卡片边框 class */
+  borderClass: string;
+  /** 建议背景 class */
+  adviceClass: string;
 }
 
 export interface TableColumn {
@@ -111,6 +131,9 @@ export interface FormField {
 
   /** 四象限矩阵配置（quadrant 类型专用）：定义 4 个象限的名称与指导建议 */
   quadrants?: QuadrantConfig[];
+
+  /** 拖拽决策矩阵配置（dragMatrix 类型专用）：定义成本×效果四象限；选项来源复用 optionsFrom */
+  dragQuadrants?: DragMatrixQuadrantConfig[];
 
   /**
    * Computed field configuration — makes the field read-only and auto-calculated.

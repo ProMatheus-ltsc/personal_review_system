@@ -35,7 +35,7 @@ import InvestmentMergePanel, { type MergeLot } from './InvestmentMergePanel';
 import { isInvestmentTemplate } from '@/constants/templateMeta';
 import { useCooldownSettings } from '@/hooks/useCooldownSettings';
 import { useLinkedRecords } from '@/hooks/useLinkedRecords';
-import { EMPTY_QUADRANT_MATRIX } from '@/constants/quadrant';
+import { EMPTY_QUADRANT_MATRIX, EMPTY_DRAG_MATRIX } from '@/constants/quadrant';
 import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 import SellContextInline from './SellContextInline';
 import ReviewContextInline from './ReviewContextInline';
@@ -207,6 +207,11 @@ const FormRenderer: React.FC<FormRendererProps> = ({
           defaults[f.id] = f.defaultValue && typeof f.defaultValue === 'object'
             ? f.defaultValue
             : EMPTY_QUADRANT_MATRIX();
+        } else if (f.type === 'dragMatrix') {
+          // 拖拽决策矩阵：默认空矩阵
+          defaults[f.id] = f.defaultValue && typeof f.defaultValue === 'object'
+            ? f.defaultValue
+            : EMPTY_DRAG_MATRIX();
         } else if (f.defaultValue !== undefined) {
           defaults[f.id] = resolveDefaultValue(f.defaultValue, now);
         }
@@ -734,8 +739,8 @@ const FormRenderer: React.FC<FormRendererProps> = ({
     // optionsFrom：表格列动态选项
     const dynamicOptions = computeDynamicOptions(field);
 
-    // checkbox/rating/table/quadrant 需要受控传值，其余字段由 RHF register 接管
-    const isControlledType = field.type === 'checkbox' || field.type === 'rating' || field.type === 'table' || field.type === 'quadrant';
+    // checkbox/rating/table/quadrant/dragMatrix 需要受控传值，其余字段由 RHF register 接管
+    const isControlledType = field.type === 'checkbox' || field.type === 'rating' || field.type === 'table' || field.type === 'quadrant' || field.type === 'dragMatrix';
     const fieldComponent = (
         <FieldRenderer
             key={field.id}

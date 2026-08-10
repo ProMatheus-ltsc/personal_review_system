@@ -36,6 +36,7 @@ import {
   RatingInput,
   TableInput,
   QuadrantInput,
+  DragMatrixInput,
   ComputedDisplay,
   type InputFieldProps,
 } from '@/components/form/FieldInputs';
@@ -202,6 +203,7 @@ const FieldRenderer = React.memo<FieldRendererProps>(function FieldRenderer({
       case 'rating': return <RatingInput {...commonInputProps} />;
       case 'table': return <TableInput {...commonInputProps} />;
       case 'quadrant': return <QuadrantInput {...commonInputProps} />;
+      case 'dragMatrix': return <DragMatrixInput {...commonInputProps} />;
       default: return null;
     }
   };

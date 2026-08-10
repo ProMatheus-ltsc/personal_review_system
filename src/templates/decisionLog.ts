@@ -11,12 +11,20 @@
  * - Phase 2「决策后」：决策后1-7天填写，记录短期执行反馈；完成即标记整个决策日志完成
  * - Phase 3「长期复盘」：记录完成后1个月提醒填写，评估长期效果
  *
+ * 决策前流程（2026-08-11 增强）：
+ * 1. 明确问题与根因 —— 决策方案必须建立在对问题及其根因的清晰理解上
+ * 2. 三维度生成选项 —— 经验（立即反应）/ 观察归纳推理 / 创新（SCAMPER 法则）全面发散
+ * 3. 选项梳理（表格）—— 把三维度的想法提炼为正式选项
+ * 4. 决策矩阵评估 —— 拖拽选项到「成本×效果」矩阵（事半功倍/物有所值/无关痛痒/劳民伤财）
+ * 5. 最终决策 —— 结合矩阵评估结果做出选择
+ *
  * 特殊机制：
  * - 条件字段：如「基本不可逆」时强制要求填写退出机制；
  *   执行状态为「有调整」时展示意外事件字段
  * - 多选项条件显示：选项C 仅在填写了选项B 后显示，避免初始视觉过载
  */
 import type { FormTemplate } from '@/types';
+import { DEFAULT_DRAG_QUADRANTS } from '@/constants/quadrant';
 
 export const decisionLogTemplate: FormTemplate = {
   id: 'decision_log',
@@ -79,21 +87,38 @@ export const decisionLogTemplate: FormTemplate = {
     {
       id: 'pre_decision',
       title: '决策前',
-      description: '决策前的分析和准备',
+      description: '决策前的分析和准备：先明确问题与根因，再从三个维度生成选项，最后用决策矩阵评估',
       fields: [
+        // 第一步：明确问题与根因（决策方案必须建立在对问题根因的理解上）
+        { id: 'problem_statement', label: '已明确的问题', type: 'textarea', required: true, placeholder: '用一句话说清楚：要解决的核心问题是什么？', priority: 'required', hint: '决策前必须先明确问题本身——避免"用错误的方法解决正确的问题"' },
+        { id: 'problem_root_cause', label: '问题的根因', type: 'textarea', required: true, placeholder: '导致这个问题的根本原因是什么？', priority: 'required', hint: '连续追问 5 个「为什么」找到根因；只有针对根因的方案才可能真正解决问题' },
         { id: 'trigger_event', label: '触发事件', type: 'textarea', required: true, placeholder: '是什么事件触发了这个决策需求？', priority: 'required', hint: '描述促使你必须做出决策的事件或变化' },
         { id: 'cost_of_no_decision', label: '不决策的代价', type: 'textarea', placeholder: '如果不做决策，会有什么后果？', priority: 'recommended' },
         { id: 'time_pressure', label: '时间压力', type: 'radio', required: true, priority: 'required', options: [
           { value: '紧急', label: '紧急' }, { value: '中等', label: '中等' }, { value: '充裕', label: '充裕' },
         ]},
+        // 第二步：三维度生成选项（引导发散，避免只想到一两个常规选项）
+        { id: 'idea_experience', label: '选项生成 · 经验维度（立即反应）', type: 'textarea', priority: 'recommended', placeholder: '凭直觉/第一反应，你首先想到的做法是什么？过去遇到类似情况你是怎么做的？', hint: '写下脑海中第一个冒出来的方案，以及过往经验中可复用的做法', autocomplete: true },
+        { id: 'idea_observation', label: '选项生成 · 观察/归纳/推理维度', type: 'textarea', priority: 'recommended', placeholder: '基于观察到的事实和规律，可以推导出哪些方案？', hint: '观察现状与数据 → 归纳规律 → 逻辑推理：别人/其他领域是怎么解决类似问题的？', autocomplete: true },
+        { id: 'idea_innovation', label: '选项生成 · 创新维度（SCAMPER 法则）', type: 'textarea', priority: 'recommended', placeholder: '用 SCAMPER 逐条提问，生成打破常规的方案', hint: 'SCAMPER 法则：S 替代（Substitute）换人/换物/换流程？C 组合（Combine）能否合并两个方案？A 调整（Adapt）借鉴其他领域做法？M 修改（Modify）改变形态/规模/参数？P 他用（Put to other use）换个用途？E 消除（Eliminate）去掉某些部分？R 重排（Reverse）颠倒顺序/角色？', autocomplete: true },
         // 选项梳理（表格）
-        { id: 'options_analysis', label: '选项梳理', type: 'table', required: true, priority: 'required', hint: '至少填写两个选项进行对比分析', tableColumns: [
+        { id: 'options_analysis', label: '选项梳理', type: 'table', required: true, priority: 'required', hint: '把上面三个维度产生的想法提炼成 2-4 个正式选项填入表格', tableColumns: [
           { id: 'option_name', label: '选项', type: 'text', width: '20%' },
           { id: 'advantage', label: '优势', type: 'text', width: '25%' },
           { id: 'risk', label: '风险', type: 'text', width: '25%' },
           { id: 'resources', label: '所需资源', type: 'text', width: '15%' },
           { id: 'assessment', label: '评估', type: 'select', options: ['优选', '备选', '排除'], width: '15%' },
         ]},
+        // 第三步：决策矩阵评估（成本×效果，拖拽选项进入矩阵）
+        {
+          id: 'decision_matrix',
+          label: '决策矩阵评估（成本 × 效果）',
+          type: 'dragMatrix',
+          priority: 'recommended',
+          hint: '把「选项梳理」中的选项拖拽到矩阵对应象限：事半功倍（低成本高效果）优先、物有所值（高成本高效果）评估资源、无关痛痒（低成本低效果）谨慎、劳民伤财（高成本低效果）排除',
+          optionsFrom: { fieldId: 'options_analysis', columnId: 'option_name' },
+          dragQuadrants: DEFAULT_DRAG_QUADRANTS,
+        },
         // 信息评估
         { id: 'key_info', label: '关键信息', type: 'textarea', placeholder: '做决策需要的关键信息有哪些？', priority: 'recommended' },
         { id: 'info_reliability', label: '信息可靠性', type: 'radio', priority: 'recommended', options: [

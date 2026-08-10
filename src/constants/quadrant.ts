@@ -9,8 +9,9 @@
  * - DEFAULT_QUADRANTS：四象限的默认配置（名称 / 典型事项 / 处理原则 / 指导建议 / 视觉样式）
  * - EMPTY_QUADRANT_MATRIX()：返回全新的空矩阵（避免多个字段共享同一引用）
  * - isQuadrantMatrix()：判断一个值是否为四象限矩阵结构
+ * - DEFAULT_DRAG_QUADRANTS / EMPTY_DRAG_MATRIX()：拖拽决策矩阵（成本×效果）配置
  */
-import type { QuadrantKey, QuadrantMatrix, QuadrantConfig } from '@/types';
+import type { QuadrantKey, QuadrantMatrix, QuadrantConfig, DragMatrixValue, DragMatrixQuadrantConfig } from '@/types';
 
 export const QUADRANT_KEYS: QuadrantKey[] = ['q1', 'q2', 'q3', 'q4'];
 
@@ -19,8 +20,20 @@ export function EMPTY_QUADRANT_MATRIX(): QuadrantMatrix {
   return { q1: [], q2: [], q3: [], q4: [] };
 }
 
+/** 返回一个全新的空拖拽决策矩阵（每个象限为空数组） */
+export function EMPTY_DRAG_MATRIX(): DragMatrixValue {
+  return { q1: [], q2: [], q3: [], q4: [] };
+}
+
 /** 判断值是否为四象限矩阵结构（用于校验与导出兜底） */
 export function isQuadrantMatrix(val: unknown): val is QuadrantMatrix {
+  if (typeof val !== 'object' || val === null) return false;
+  const obj = val as Record<string, unknown>;
+  return QUADRANT_KEYS.every((k) => Array.isArray(obj[k]));
+}
+
+/** 判断值是否为拖拽决策矩阵结构（q1-q4 均为字符串数组） */
+export function isDragMatrixValue(val: unknown): val is DragMatrixValue {
   if (typeof val !== 'object' || val === null) return false;
   const obj = val as Record<string, unknown>;
   return QUADRANT_KEYS.every((k) => Array.isArray(obj[k]));
@@ -84,5 +97,56 @@ export const DEFAULT_QUADRANTS: QuadrantConfig[] = [
     dotClass: 'bg-slate-400',
     borderClass: 'border-slate-200',
     adviceClass: 'bg-slate-50 text-slate-500',
+  },
+];
+
+/**
+ * 拖拽决策矩阵默认配置（成本 × 效果评估）
+ *
+ * 选项从「选项梳理」表格拖入矩阵评估：
+ * - 事半功倍：成本低 · 效果好 —— 优先考虑
+ * - 物有所值：成本高 · 效果好 —— 值得投入（评估资源承受力）
+ * - 无关痛痒：成本低 · 效果差 —— 可做可不做，谨慎
+ * - 劳民伤财：成本高 · 效果差 —— 果断排除
+ * 布局（组件内按 效果 横向、成本 纵向 排列）：
+ *   [无关痛痒 | 事半功倍]
+ *   [劳民伤财 | 物有所值]
+ */
+export const DEFAULT_DRAG_QUADRANTS: DragMatrixQuadrantConfig[] = [
+  {
+    key: 'q1',
+    label: '事半功倍',
+    desc: '成本低 · 效果好',
+    advice: '投入产出比最高的选择，优先考虑。',
+    dotClass: 'bg-emerald-500',
+    borderClass: 'border-emerald-300',
+    adviceClass: 'bg-emerald-50 text-emerald-700',
+  },
+  {
+    key: 'q2',
+    label: '物有所值',
+    desc: '成本高 · 效果好',
+    advice: '值得投入，但需评估资源是否承受得起，必要时分步执行。',
+    dotClass: 'bg-blue-500',
+    borderClass: 'border-blue-200',
+    adviceClass: 'bg-blue-50 text-blue-700',
+  },
+  {
+    key: 'q3',
+    label: '无关痛痒',
+    desc: '成本低 · 效果差',
+    advice: '做了也不会有明显改变，可做可不做，谨慎分配时间。',
+    dotClass: 'bg-amber-400',
+    borderClass: 'border-amber-200',
+    adviceClass: 'bg-amber-50 text-amber-700',
+  },
+  {
+    key: 'q4',
+    label: '劳民伤财',
+    desc: '成本高 · 效果差',
+    advice: '投入大回报低，果断排除，避免沉没成本陷阱。',
+    dotClass: 'bg-rose-500',
+    borderClass: 'border-rose-200',
+    adviceClass: 'bg-rose-50 text-rose-700',
   },
 ];

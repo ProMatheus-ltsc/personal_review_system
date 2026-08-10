@@ -12,7 +12,7 @@
  * - 空值统一显示为「（未填写）」
  */
 import { FormRecord, FormTemplate, FormField } from '@/types';
-import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
+import { DEFAULT_QUADRANTS, DEFAULT_DRAG_QUADRANTS, isQuadrantMatrix, isDragMatrixValue } from '@/constants/quadrant';
 import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 
 /** 将 ISO 日期字符串格式化为中文日期（如「2024年3月15日」） */
@@ -37,6 +37,24 @@ function formatQuadrantMatrix(field: FormField, value: unknown): string {
       lines.push('- （未填写）');
     } else {
       items.forEach((it) => lines.push(`- ${it.text}`));
+    }
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+/** 将拖拽决策矩阵渲染为 Markdown 列表（按成本×效果象限分组） */
+function formatDragMatrix(field: FormField, value: unknown): string {
+  if (!isDragMatrixValue(value)) return '（未填写）';
+  const quadrants = field.dragQuadrants && field.dragQuadrants.length === 4 ? field.dragQuadrants : DEFAULT_DRAG_QUADRANTS;
+  const lines: string[] = [];
+  quadrants.forEach((q) => {
+    const items = (value[q.key] || []).filter((t) => t && String(t).trim());
+    lines.push(`**${q.label}**（${q.desc}）`);
+    if (items.length === 0) {
+      lines.push('- （未填写）');
+    } else {
+      items.forEach((it) => lines.push(`- ${it}`));
     }
     lines.push('');
   });
@@ -80,6 +98,9 @@ function formatFieldValue(field: FormField, value: unknown): string {
     }
     case 'quadrant': {
       return formatQuadrantMatrix(field, value);
+    }
+    case 'dragMatrix': {
+      return formatDragMatrix(field, value);
     }
     default:
       return String(value);
@@ -152,6 +173,10 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
               lines.push(`#### ${field.label}`);
               lines.push('');
               lines.push(formatQuadrantMatrix(field, value));
+            } else if (field.type === 'dragMatrix') {
+              lines.push(`#### ${field.label}`);
+              lines.push('');
+              lines.push(formatDragMatrix(field, value));
             } else if (field.type !== 'table') {
               const formatted = formatFieldValue(field, value);
               lines.push(`**${field.label}**: ${formatted}`);
@@ -203,6 +228,10 @@ export function exportToMarkdown(record: FormRecord, template: FormTemplate): st
         lines.push(`### ${field.label}`);
         lines.push('');
         lines.push(formatQuadrantMatrix(field, value));
+      } else if (field.type === 'dragMatrix') {
+        lines.push(`### ${field.label}`);
+        lines.push('');
+        lines.push(formatDragMatrix(field, value));
       } else if (field.type !== 'table') {
         const formatted = formatFieldValue(field, value);
         lines.push(`**${field.label}**: ${formatted}`);

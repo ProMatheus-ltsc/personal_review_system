@@ -7,8 +7,9 @@
  *
  * 每个组件保持单一职责、行数 ≤ 40，方便维护与复用。
  */
-import type { FormField, QuadrantKey, QuadrantMatrix } from '@/types';
-import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
+import { useState } from 'react';
+import type { FormField, QuadrantKey, QuadrantMatrix, DragMatrixValue } from '@/types';
+import { DEFAULT_QUADRANTS, DEFAULT_DRAG_QUADRANTS, QUADRANT_KEYS, isQuadrantMatrix } from '@/constants/quadrant';
 
 /** 输入组件统一 props：字段定义 + 样式 + 受控/非受控双模式 */
 export interface InputFieldProps {
@@ -524,6 +525,173 @@ export function QuadrantInput({ field, value, onChange }: InputFieldProps) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** 拖拽决策矩阵（dragMatrix · 成本×效果评估）
+ * 选项来自「选项梳理」表格（dynamicOptions），拖拽到 2×2 矩阵中评估：
+ * 事半功倍（低成本高效果）/ 物有所值（高成本高效果）/ 无关痛痒（低成本低效果）/ 劳民伤财（高成本低效果）。
+ * 值为 DragMatrixValue：{ q1: string[], q2: ..., q3: ..., q4: ... }（存选项文本），受控组件。
+ * 布局：横向为效果（左差右好），纵向为成本（上低下高）：
+ *   [无关痛痒 | 事半功倍]
+ *   [劳民伤财 | 物有所值]
+ */
+export function DragMatrixInput({ field, value, onChange, dynamicOptions }: InputFieldProps) {
+  const [dragOver, setDragOver] = useState<QuadrantKey | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+
+  const quadrants = field.dragQuadrants && field.dragQuadrants.length === 4 ? field.dragQuadrants : DEFAULT_DRAG_QUADRANTS;
+  // 归一化矩阵（容错旧数据）
+  const raw = value && typeof value === 'object' ? value as Partial<DragMatrixValue> : undefined;
+  const matrix: DragMatrixValue = {
+    q1: Array.isArray(raw?.q1) ? raw.q1 : [],
+    q2: Array.isArray(raw?.q2) ? raw.q2 : [],
+    q3: Array.isArray(raw?.q3) ? raw.q3 : [],
+    q4: Array.isArray(raw?.q4) ? raw.q4 : [],
+  };
+  const assigned = new Set(([] as string[]).concat(...QUADRANT_KEYS.map((k) => matrix[k])));
+  // 选项池：dynamicOptions 中尚未放入矩阵的选项
+  const poolOptions = (dynamicOptions && dynamicOptions.length > 0 ? dynamicOptions : [])
+    .map((o) => o.label)
+    .filter((t) => t.trim() !== '' && !assigned.has(t));
+  const allPooled = poolOptions.length + assigned.size;
+
+  const updateMatrix = (qk: QuadrantKey, items: string[]) =>
+    onChange?.({ q1: matrix.q1, q2: matrix.q2, q3: matrix.q3, q4: matrix.q4, [qk]: items });
+
+  const assignTo = (qk: QuadrantKey, text: string) => {
+    const t = String(text).trim();
+    if (!t) return;
+    const cur = matrix[qk];
+    if (cur.includes(t)) return;
+    updateMatrix(qk, [...cur, t]);
+  };
+  const removeFrom = (qk: QuadrantKey, idx: number) => {
+    updateMatrix(qk, matrix[qk].filter((_, i) => i !== idx));
+  };
+
+  const onDrop = (qk: QuadrantKey, e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(null);
+    const text = e.dataTransfer.getData('text/plain') || dragging;
+    if (text) assignTo(qk, text);
+    setDragging(null);
+  };
+
+  // 布局顺序：行1 = [q3 无关痛痒, q1 事半功倍]，行2 = [q4 劳民伤财, q2 物有所值]
+  const layout: { qk: QuadrantKey; col: 'top' | 'bottom'; row: 'left' | 'right' }[] = [
+    { qk: 'q3', col: 'top', row: 'left' },
+    { qk: 'q1', col: 'top', row: 'right' },
+    { qk: 'q4', col: 'bottom', row: 'left' },
+    { qk: 'q2', col: 'bottom', row: 'right' },
+  ];
+
+  return (
+    <div>
+      {/* 选项池（可拖拽） */}
+      <div className="mb-3">
+        <p className="text-[11px] text-gray-500 mb-1.5">
+          📦 待评估选项（{poolOptions.length}/{allPooled}）—— 按住拖动到下方矩阵对应象限
+        </p>
+        <div className="flex flex-wrap gap-1.5 min-h-[34px]">
+          {poolOptions.length === 0 && (
+            <span className="text-xs text-gray-400 py-1.5">
+              {allPooled === 0 ? '请先在「选项梳理」表格中填写选项' : '所有选项已放入矩阵'}
+            </span>
+          )}
+          {poolOptions.map((opt) => (
+            <span
+              key={opt}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', opt);
+                e.dataTransfer.effectAllowed = 'move';
+                setDragging(opt);
+              }}
+              onDragEnd={() => setDragging(null)}
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full border cursor-grab active:cursor-grabbing transition select-none ${
+                dragging === opt
+                  ? 'bg-indigo-100 border-indigo-300 text-indigo-700 opacity-60'
+                  : 'bg-white border-gray-300 text-gray-700 hover:border-indigo-400 hover:text-indigo-600'
+              }`}
+              title="拖拽到矩阵中评估"
+            >
+              {opt}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* 2×2 决策矩阵 */}
+      <div className="rounded-xl border border-gray-200 overflow-hidden">
+        {/* 轴标签：顶部为「效果 →」 */}
+        <div className="grid grid-cols-2">
+          <div className="text-center text-[10px] text-gray-400 py-1 bg-gray-50 border-b border-gray-200">效果差</div>
+          <div className="text-center text-[10px] text-gray-400 py-1 bg-gray-50 border-b border-gray-200">效果好 ← 效果 →</div>
+        </div>
+        {(['top', 'bottom'] as const).map((col) => (
+          <div key={col} className="grid grid-cols-2">
+            {layout.filter((l) => l.col === col).map(({ qk, row }) => {
+              const q = quadrants.find((x) => x.key === qk)!;
+              const items = matrix[qk];
+              return (
+                <div
+                  key={qk}
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(qk); }}
+                  onDragLeave={() => setDragOver((cur) => (cur === qk ? null : cur))}
+                  onDrop={(e) => onDrop(qk, e)}
+                  className={`p-2.5 border border-dashed transition-colors min-h-[92px] ${
+                    col === 'top' ? 'border-b-0' : ''
+                  } ${row === 'left' ? 'border-r-0' : ''} ${
+                    dragOver === qk ? 'bg-indigo-50 border-indigo-300' : 'bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className={`w-2 h-2 rounded-full ${q.dotClass}`} />
+                    <span className="text-xs font-semibold text-gray-800">{q.label}</span>
+                    <span className="text-[10px] text-gray-400 ml-auto">{q.desc}</span>
+                  </div>
+                  <p className={`text-[10px] leading-snug rounded px-1.5 py-0.5 mb-1 ${q.adviceClass}`}>{q.advice}</p>
+                  <div className="flex flex-wrap gap-1 min-h-[20px]">
+                    {items.map((it, idx) => (
+                      <span
+                        key={`${it}-${idx}`}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', it);
+                          e.dataTransfer.effectAllowed = 'move';
+                          setDragging(it);
+                        }}
+                        onDragEnd={() => setDragging(null)}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded bg-gray-100 border border-gray-200 text-gray-700 group cursor-grab select-none"
+                      >
+                        {it}
+                        <button
+                          type="button"
+                          onClick={() => removeFrom(qk, idx)}
+                          className="text-gray-300 group-hover:text-red-500 hover:!text-red-600 leading-none"
+                          title="移出矩阵"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    {items.length === 0 && dragOver !== qk && (
+                      <span className="text-[10px] text-gray-300 self-center">拖选项到这里</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {/* 左侧轴标签：成本 */}
+        <div className="grid grid-cols-2 text-[10px] text-gray-400 bg-gray-50">
+          <div className="text-center py-1">成本低</div>
+          <div className="text-center py-1">成本高 ↑ 成本 ↓</div>
+        </div>
+      </div>
     </div>
   );
 }

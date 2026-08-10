@@ -16,7 +16,7 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { FormRecord, FormTemplate, FormField } from '@/types';
-import { DEFAULT_QUADRANTS, isQuadrantMatrix } from '@/constants/quadrant';
+import { DEFAULT_QUADRANTS, DEFAULT_DRAG_QUADRANTS, isQuadrantMatrix, isDragMatrixValue } from '@/constants/quadrant';
 import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 
 function formatDate(dateStr: string): string {
@@ -26,6 +26,27 @@ function formatDate(dateStr: string): string {
   const month = date.getMonth() + 1;
   const day = date.getDate();
   return `${year}年${month}月${day}日`;
+}
+
+/** 将拖拽决策矩阵渲染为 HTML（按成本×效果象限分组的列表） */
+function formatDragMatrixHtml(field: FormField, value: unknown): string {
+  if (!isDragMatrixValue(value)) {
+    return `<div style="margin-bottom: 10px; font-size: 14px; color: #999;">（未填写）</div>`;
+  }
+  const quadrants = field.dragQuadrants && field.dragQuadrants.length === 4 ? field.dragQuadrants : DEFAULT_DRAG_QUADRANTS;
+  let html = '';
+  quadrants.forEach((q) => {
+    const items = (value[q.key] || []).filter((t) => t && String(t).trim());
+    html += `<div style="margin: 8px 0 4px; font-size: 14px; font-weight: 600; color: #444;">${q.label}（${q.desc}）</div>`;
+    if (items.length === 0) {
+      html += `<div style="font-size: 13px; color: #999; margin-left: 12px;">（未填写）</div>`;
+    } else {
+      html += '<ul style="margin: 4px 0 8px 24px; font-size: 13px; color: #555;">';
+      items.forEach((it) => { html += `<li>${it}</li>`; });
+      html += '</ul>';
+    }
+  });
+  return html;
 }
 
 /** 将四象限矩阵渲染为 HTML（按象限分组的列表） */
@@ -85,6 +106,9 @@ function formatFieldValue(field: FormField, value: unknown): string {
     }
     case 'quadrant': {
       return formatQuadrantMatrixHtml(field, value);
+    }
+    case 'dragMatrix': {
+      return formatDragMatrixHtml(field, value);
     }
     default:
       return String(value);
@@ -147,7 +171,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
                 }
                 html += '</table>';
               }
-            } else if (field.type !== 'table' && field.type !== 'quadrant') {
+            } else if (field.type !== 'table' && field.type !== 'quadrant' && field.type !== 'dragMatrix') {
               const formatted = formatFieldValue(field, value);
               html += `
                 <div style="margin-bottom: 10px;">
@@ -158,6 +182,9 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
             } else if (field.type === 'quadrant') {
               html += `<h4 style="font-size: 14px; font-weight: 600; margin-top: 12px; margin-bottom: 6px; color: #555;">${field.label}</h4>`;
               html += formatQuadrantMatrixHtml(field, value);
+            } else if (field.type === 'dragMatrix') {
+              html += `<h4 style="font-size: 14px; font-weight: 600; margin-top: 12px; margin-bottom: 6px; color: #555;">${field.label}</h4>`;
+              html += formatDragMatrixHtml(field, value);
             }
           }
         });
@@ -197,7 +224,7 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
           }
           html += '</table>';
         }
-      } else if (field.type !== 'table' && field.type !== 'quadrant') {
+      } else if (field.type !== 'table' && field.type !== 'quadrant' && field.type !== 'dragMatrix') {
         const formatted = formatFieldValue(field, value);
         html += `
           <div style="margin-bottom: 10px;">
@@ -208,6 +235,9 @@ function buildHtml(record: FormRecord, template: FormTemplate): string {
       } else if (field.type === 'quadrant') {
         html += `<h3 style="font-size: 15px; font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #444;">${field.label}</h3>`;
         html += formatQuadrantMatrixHtml(field, value);
+      } else if (field.type === 'dragMatrix') {
+        html += `<h3 style="font-size: 15px; font-weight: 600; margin-top: 16px; margin-bottom: 8px; color: #444;">${field.label}</h3>`;
+        html += formatDragMatrixHtml(field, value);
       }
     }
   }
