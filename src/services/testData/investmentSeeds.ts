@@ -22,9 +22,10 @@ function makeRecord(
 ): FormRecord {
   const now = new Date().toISOString();
   const roleLabel = role === 'position' ? '持有仓位' : role === 'buy' ? '买入' : '卖出';
+  const templateIdMap = { position: 'investment_checklist_position', buy: 'investment_checklist_buy', sell: 'investment_checklist_sell' } as const;
   const record: FormRecord = {
     id: uuidv4(),
-    templateId: 'investment_checklist',
+    templateId: templateIdMap[role],
     title: `投资检查清单 - ${code} ${roleLabel}`,
     data: { record_role: role, buy_company_name: code, ...data },
     status: 'draft',
