@@ -19,6 +19,8 @@ import ExportButtons from '@/components/ExportButtons';
 import { useRecord } from '@/hooks/useDB';
 import type { FormRecord } from '@/types';
 
+import { isInvestmentTemplate } from '@/constants/templateMeta';
+
 /**
  * FormPage — 表单填写/编辑页（组件实现）
  * 投资检查清单新建模式（无 recordId）走 InvestmentEntry 代码中心入口；
@@ -98,10 +100,10 @@ const FormPage: React.FC = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-2 justify-center">
               <button
-                onClick={() => navigate(template.id === 'investment_checklist' ? '/' : `/history/${template.id}`)}
+                onClick={() => navigate(isInvestmentTemplate(template.id) ? '/' : `/history/${template.id}`)}
                 className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
               >
-                {template.id === 'investment_checklist' ? '去新建' : '查看历史'}
+                {isInvestmentTemplate(template.id) ? '去新建' : '查看历史'}
               </button>
               <button
                 onClick={() => navigate(-1)}
@@ -117,7 +119,7 @@ const FormPage: React.FC = () => {
   }
 
   // 投资检查清单新建模式：先进入股票代码中心入口（选择操作）
-  if (templateId === 'investment_checklist' && !recordId) {
+  if (templateId === 'investment_checklist_buy' && !recordId) {
     return (
       <div>
         <header className="bg-white border-b border-gray-200 sticky top-14 md:top-16 z-10 -mx-4 md:-mx-6 px-4 md:px-6">
