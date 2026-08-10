@@ -40,8 +40,4 @@ export const TEMPLATE_IDS = {
   EMOTIONAL: 'emotional_awareness',
   CASE_STUDY: 'case_study',
   DECISION_LOG: 'decision_log',
-  INVESTMENT: 'investment_checklist_buy',
-  INVESTMENT_BUY: 'investment_checklist_buy',
-  INVESTMENT_SELL: 'investment_checklist_sell',
-  INVESTMENT_POSITION: 'investment_checklist_position',
 } as const;
