@@ -32,12 +32,12 @@ function filterByTimeRange(records: FormRecord[], range: TimeRange): FormRecord[
  * 仅统计新模型单据（record_role = position/buy/sell），旧格式不展示
  */
 export async function getAllInvestmentRecords(range: TimeRange): Promise<FormRecord[]> {
-  const records = await getAllRecords('investment_checklist');
-  const valid = records.filter((r) => {
-    const role = r.data.record_role as string | undefined;
-    return role === 'position' || role === 'buy' || role === 'sell';
-  });
-  return filterByTimeRange(valid, range);
+  const records = (await Promise.all([
+    getAllRecords('investment_checklist_buy'),
+    getAllRecords('investment_checklist_sell'),
+    getAllRecords('investment_checklist_position'),
+  ])).flat();
+  return filterByTimeRange(records, range);
 }
 
 // ============================================================
