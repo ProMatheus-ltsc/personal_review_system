@@ -12,7 +12,7 @@ interface RepeatableSectionProps {
   section: FormSection;
   entries: RepeatableEntry[];
   onChange: (entries: RepeatableEntry[]) => void;
-  templateId: TemplateId;
+  templateId: string;
   externalContext?: Record<string, unknown>;
 }
 
@@ -172,7 +172,7 @@ const RepeatableSection: React.FC<RepeatableSectionProps> = ({
           values[dep] = externalContext[dep];
         });
       }
-      return field.computed.formula(values);
+      return String(field.computed.formula(values) ?? '');
     },
     [externalContext]
   );

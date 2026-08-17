@@ -399,9 +399,12 @@ export function TableInput({ field, value, onChange }: InputFieldProps) {
                       className="w-full px-2 py-1.5 text-sm bg-transparent border-transparent rounded focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
                     >
                       <option value="">请选择</option>
-                      {col.options?.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
+                      {col.options?.map((opt) => {
+                        // 兼容两种列选项写法：string[]（简写）或 FieldOption[]（带 value/label）
+                        const optValue = typeof opt === 'string' ? opt : opt.value;
+                        const optLabel = typeof opt === 'string' ? opt : opt.label;
+                        return <option key={optValue} value={optValue}>{optLabel}</option>;
+                      })}
                     </select>
                   ) : (
                     <input

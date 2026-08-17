@@ -248,7 +248,7 @@ const FormRenderer: React.FC<FormRendererProps> = ({
 
   // === Computed fields logic ===
   const computedFields = useMemo(() => {
-    const fields: { id: string; dependsOn: string[]; formula: (v: Record<string, unknown>) => string; placeholder?: string; errorText?: string }[] = [];
+    const fields: { id: string; dependsOn: string[]; formula: (v: Record<string, unknown>) => string | unknown; placeholder?: string; errorText?: string }[] = [];
     template.sections.forEach((s) => {
       if (s.repeatable) return; // skip repeatable sections
       s.fields.forEach((f) => {

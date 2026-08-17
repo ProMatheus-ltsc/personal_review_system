@@ -1,13 +1,5 @@
 /**
- * LoadingSpinner — 全屏加载动画组件
- *
- * 用于 React.lazy 的 Suspense fallback，
- * 在懒加载页面 chunk 下载期间展示居中的旋转指示器。
+ * LoadingSpinner — 加载指示器
+ * 实现来自 @shared/core 公共包（同源组件，re-export 薄层）
  */
-export default function LoadingSpinner() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-}
+export { LoadingSpinner as default } from '@shared/core/components/LoadingSpinner';
