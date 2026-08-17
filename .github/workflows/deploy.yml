@@ -21,10 +21,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # @shared/core 为 file:../shared-core 本地路径依赖，CI 需先把公共包 clone 到项目父目录
+      # @shared/core 为 file:../shared-core 本地路径依赖，CI 需先把公共包 clone 到项目父目录并安装其类型声明
       - name: Clone shared-core
         run: |
           git clone --depth 1 https://github.com/ProMatheus-ltsc/shared-core.git ../shared-core
+          cd ../shared-core && npm install --no-audit --no-fund
 
       - name: Setup Node
         uses: actions/setup-node@v4
