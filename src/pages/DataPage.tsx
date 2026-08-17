@@ -21,6 +21,16 @@ import {
 } from '@/services/db';
 import { templates } from '@/templates';
 import { exportRecordsAsMarkdown, generateAnnualReport } from '@/services/batchExport';
+import {
+  configureSyncService,
+  getSyncStatus,
+  fullBackupToD1,
+  restoreFromD1,
+  pushChanges,
+  type SyncConfig,
+  type SyncStatus,
+  type SyncResult,
+} from '@/services/cloudflareD1';
 import { StatsPanel } from '@/components/stats';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
@@ -62,9 +72,65 @@ export default function DataPage() {
   const [docMessage, setDocMessage] = useState<string | null>(null);
   // 可选年份：今年 + 前 4 年
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i));
+  // 云备份（Cloudflare D1）
+  const [syncConfigInput, setSyncConfigInput] = useState({ apiEndpoint: '', accountId: '', authToken: '' });
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  /** 加载已保存的云备份配置并刷新状态 */
+  const loadSyncState = async () => {
+    const saved = (await getSetting('d1SyncConfig')) as SyncConfig | null | undefined;
+    if (saved?.apiEndpoint && saved?.accountId) {
+      setSyncConfigInput({ apiEndpoint: saved.apiEndpoint, accountId: saved.accountId, authToken: saved.authToken ?? '' });
+      configureSyncService({ apiEndpoint: saved.apiEndpoint, accountId: saved.accountId, authToken: saved.authToken });
+      const st = await getSyncStatus();
+      setSyncStatus(st);
+    } else {
+      setSyncStatus(null);
+    }
+  };
+
+  /** 保存云备份配置 */
+  const handleSaveSyncConfig = async () => {
+    const apiEndpoint = syncConfigInput.apiEndpoint.trim().replace(/\/$/, '');
+    const accountId = syncConfigInput.accountId.trim();
+    if (!apiEndpoint || !accountId) {
+      setSyncMessage('⚠️ 请填写 Worker 地址与账户 ID');
+      return;
+    }
+    const cfg = { apiEndpoint, accountId, authToken: syncConfigInput.authToken.trim() || undefined };
+    await setSetting('d1SyncConfig', cfg);
+    configureSyncService(cfg);
+    const st = await getSyncStatus();
+    setSyncStatus(st);
+    setSyncMessage('✅ 云备份配置已保存' + (st.isOnline ? '，服务在线' : '，服务不可达（请检查 Worker 地址）'));
+  };
+
+  /** 执行云备份操作并展示结果 */
+  const runSync = async (action: 'backup' | 'restore' | 'push', label: string) => {
+    setSyncBusy(true);
+    setSyncMessage(null);
+    try {
+      let result: SyncResult;
+      if (action === 'backup') result = await fullBackupToD1();
+      else if (action === 'restore') result = await restoreFromD1();
+      else result = await pushChanges();
+      if (result.success) {
+        setSyncMessage(`✅ ${label}成功：推送 ${result.pushed} 条 / 拉取 ${result.pulled} 条${result.conflicts > 0 ? ` / 冲突 ${result.conflicts} 条` : ''}`);
+      } else {
+        setSyncMessage(`❌ ${label}失败：${result.error ?? '未知错误'}`);
+      }
+      const st = await getSyncStatus();
+      setSyncStatus(st);
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
+    loadSyncState();
     // 加载复盘等待期配置
     (async () => {
       const [buy, sell, pos, decision] = await Promise.all([
@@ -350,6 +416,89 @@ export default function DataPage() {
               </button>
             </div>
             {docMessage && <p className="text-sm text-green-600">{docMessage}</p>}
+          </div>
+        </section>
+
+        {/* 云备份（Cloudflare D1） */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span>☁️</span> 云备份（Cloudflare D1）
+          </h2>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+            <p className="text-sm text-gray-600">
+              将本地数据备份到 Cloudflare D1 远程数据库（Local-First：本地为主，云端为备份）。
+              需要先部署一个 Cloudflare Worker（含 D1 绑定，提供 /api/sync/* 接口），再把 Worker 地址填入下方。
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">Worker 地址（apiEndpoint）</p>
+                <input
+                    type="text"
+                    value={syncConfigInput.apiEndpoint}
+                    onChange={(e) => setSyncConfigInput((p) => ({ ...p, apiEndpoint: e.target.value }))}
+                    placeholder="https://your-worker.workers.dev"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">账户 ID（accountId）</p>
+                <input
+                    type="text"
+                    value={syncConfigInput.accountId}
+                    onChange={(e) => setSyncConfigInput((p) => ({ ...p, accountId: e.target.value }))}
+                    placeholder="当前登录账户名"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">访问令牌（可选）</p>
+                <input
+                    type="password"
+                    value={syncConfigInput.authToken}
+                    onChange={(e) => setSyncConfigInput((p) => ({ ...p, authToken: e.target.value }))}
+                    placeholder="Bearer Token"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                  onClick={handleSaveSyncConfig}
+                  className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                保存配置
+              </button>
+              {syncStatus && (
+                  <span className="text-xs text-gray-500">
+                    状态：<span className={syncStatus.isOnline ? 'text-green-600 font-medium' : 'text-red-500 font-medium'}>{syncStatus.isOnline ? '在线' : '离线'}</span>
+                    {' · '}待同步 {syncStatus.pendingChanges} 条{syncStatus.lastSyncAt ? ` · 上次同步 ${new Date(syncStatus.lastSyncAt).toLocaleString('zh-CN')}` : ''}
+                  </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                  onClick={() => runSync('backup', '全量备份')}
+                  disabled={syncBusy}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                全量备份到云端
+              </button>
+              <button
+                  onClick={() => runSync('push', '增量推送')}
+                  disabled={syncBusy}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                推送本地变更
+              </button>
+              <button
+                  onClick={() => runSync('restore', '从云端恢复')}
+                  disabled={syncBusy}
+                  className="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                从云端恢复
+              </button>
+            </div>
+            {syncMessage && <p className="text-sm text-gray-700 whitespace-pre-line">{syncMessage}</p>}
           </div>
         </section>
 
