@@ -8,7 +8,21 @@
  * - FormTemplate: 完整的模板定义（元数据 + sections + phases）
  * - FormRecord: 存储在 IndexedDB 中的复盘记录
  * - TemplateId: 所有支持的模板 ID 联合类型
+ *
+ * 基础类型从 @shared/core 公共包对齐，业务特有类型（TemplateId 强类型、jsonImport 字段等）在本文件扩展定义。
  */
+
+// 从 @shared/core 导入基础类型契约（表单引擎核心类型），并重导出供外部使用
+import type {
+  FieldOption as SharedFieldOption,
+  FieldValidation as SharedFieldValidation,
+  FieldCondition as SharedFieldCondition,
+} from '@shared/core';
+
+export type { SharedFieldOption as FieldOption };
+export type { SharedFieldValidation };
+export type { SharedFieldCondition };
+
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'radio' | 'checkbox' | 'rating' | 'table' | 'quadrant' | 'dragMatrix' | 'jsonImport';
 
 /** 四象限矩阵的象限标识（参考《高效能人士的七个习惯》时间管理矩阵） */
