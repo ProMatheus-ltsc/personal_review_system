@@ -3,7 +3,7 @@
  *
  * 提供两种导出格式：
  * - Markdown：即时生成并下载 .md 文件，适合归档和知识库
- * - PDF：通过 html2canvas + jsPDF 生成带排版的 PDF，适合打印和分享
+ * - PDF：通过 @react-pdf/renderer 生成带排版的文本型 PDF（A4 自动分页），适合打印和分享
  *
  * PDF 生成为异步操作，期间按钮显示 loading 状态防止重复点击。
  */
