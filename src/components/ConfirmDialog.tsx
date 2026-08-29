@@ -1,10 +1,9 @@
 /**
- * ConfirmDialog — 通用确认弹窗
- *
- * 用于需要用户明确确认的操作（如进入只读的已锁定阶段、不可逆操作等）。
- * 视觉风格与 QualityCheck 弹窗保持一致。
+ * ConfirmDialog — 通用确认弹窗（已下沉到 @shared/core）
+ * 本文件保留为适配薄层：open/isOpen 属性映射 + 默认 info 变体（延续旧视觉基调），
+ * 历史导入路径与调用方式不变。
  */
-import React from 'react';
+import { ConfirmDialog as SharedConfirmDialog } from '@shared/core';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -16,47 +15,25 @@ interface ConfirmDialogProps {
   onCancel: () => void;
 }
 
-const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
+export default function ConfirmDialog({
   isOpen,
   title,
   message,
-  confirmText = '确认',
-  cancelText = '取消',
+  confirmText,
+  cancelText,
   onConfirm,
   onCancel,
-}) => {
-  if (!isOpen) return null;
-
+}: ConfirmDialogProps) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-      onClick={onCancel}
-    >
-      <div
-        className="bg-white rounded-xl max-w-md w-full shadow-xl p-6 animate-fadeIn"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">{title}</h2>
-        <div className="text-sm text-gray-600 mb-6 leading-relaxed">{message}</div>
-        <div className="flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-          >
-            {cancelText}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition"
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
+    <SharedConfirmDialog
+      open={isOpen}
+      title={title}
+      message={message}
+      confirmText={confirmText}
+      cancelText={cancelText}
+      variant="info"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
-};
-
-export default ConfirmDialog;
+}
