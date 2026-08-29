@@ -429,36 +429,38 @@ export default function DataPage() {
               将本地数据备份到 Cloudflare D1 远程数据库（Local-First：本地为主，云端为备份）。
               需要先部署一个 Cloudflare Worker（含 D1 绑定，提供 /api/sync/* 接口），再把 Worker 地址填入下方。
             </p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <p className="text-xs text-gray-500 mb-1.5">Worker 地址（apiEndpoint）</p>
-                <input
-                    type="text"
-                    value={syncConfigInput.apiEndpoint}
-                    onChange={(e) => setSyncConfigInput((p) => ({ ...p, apiEndpoint: e.target.value }))}
-                    placeholder="https://your-worker.workers.dev"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 mb-1.5">账户 ID（accountId）</p>
-                <input
-                    type="text"
-                    value={syncConfigInput.accountId}
-                    onChange={(e) => setSyncConfigInput((p) => ({ ...p, accountId: e.target.value }))}
-                    placeholder="当前登录账户名"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 mb-1.5">访问令牌（可选）</p>
-                <input
-                    type="password"
-                    value={syncConfigInput.authToken}
-                    onChange={(e) => setSyncConfigInput((p) => ({ ...p, authToken: e.target.value }))}
-                    placeholder="Bearer Token"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                />
+            <div className="cq">
+              <div className="cq-grid cq-cols-3-wide gap-3">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1.5">Worker 地址（apiEndpoint）</p>
+                  <input
+                      type="text"
+                      value={syncConfigInput.apiEndpoint}
+                      onChange={(e) => setSyncConfigInput((p) => ({ ...p, apiEndpoint: e.target.value }))}
+                      placeholder="https://your-worker.workers.dev"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1.5">账户 ID（accountId）</p>
+                  <input
+                      type="text"
+                      value={syncConfigInput.accountId}
+                      onChange={(e) => setSyncConfigInput((p) => ({ ...p, accountId: e.target.value }))}
+                      placeholder="当前登录账户名"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 mb-1.5">访问令牌（可选）</p>
+                  <input
+                      type="password"
+                      value={syncConfigInput.authToken}
+                      onChange={(e) => setSyncConfigInput((p) => ({ ...p, authToken: e.target.value }))}
+                      placeholder="Bearer Token"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">

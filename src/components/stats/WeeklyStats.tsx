@@ -45,25 +45,27 @@ export default function WeeklyStats({ timeRange }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <div className="rounded-lg border p-3 bg-blue-50 border-blue-100">
-          <p className="text-xs text-gray-500 mb-1">完成周数</p>
-          <p className="text-xl font-bold text-blue-700">{stats.totalWeeks}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">期间内完成的周复盘</p>
-        </div>
-        <div className="rounded-lg border p-3 bg-green-50 border-green-100">
-          <p className="text-xs text-gray-500 mb-1">目标达成率</p>
-          <p className="text-xl font-bold text-green-700">
-            {stats.avgGoalCompletion !== null ? `${stats.avgGoalCompletion}%` : '-'}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">平均目标进度</p>
-        </div>
-        <div className="rounded-lg border p-3 bg-purple-50 border-purple-100">
-          <p className="text-xs text-gray-500 mb-1">目标完成</p>
-          <p className="text-xl font-bold text-purple-700">
-            {stats.goalsTotal > 0 ? `${stats.goalsCompleted}/${stats.goalsTotal}` : '-'}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">已完成 / 总设定数</p>
+      <div className="cq">
+        <div className="cq-grid cq-cols-3 gap-3">
+          <div className="rounded-lg border p-3 bg-blue-50 border-blue-100">
+            <p className="text-xs text-gray-500 mb-1">完成周数</p>
+            <p className="text-xl font-bold text-blue-700">{stats.totalWeeks}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">期间内完成的周复盘</p>
+          </div>
+          <div className="rounded-lg border p-3 bg-green-50 border-green-100">
+            <p className="text-xs text-gray-500 mb-1">目标达成率</p>
+            <p className="text-xl font-bold text-green-700">
+              {stats.avgGoalCompletion !== null ? `${stats.avgGoalCompletion}%` : '-'}
+            </p>
+            <p className="text-[11px] text-gray-400 mt-0.5">平均目标进度</p>
+          </div>
+          <div className="rounded-lg border p-3 bg-purple-50 border-purple-100">
+            <p className="text-xs text-gray-500 mb-1">目标完成</p>
+            <p className="text-xl font-bold text-purple-700">
+              {stats.goalsTotal > 0 ? `${stats.goalsCompleted}/${stats.goalsTotal}` : '-'}
+            </p>
+            <p className="text-[11px] text-gray-400 mt-0.5">已完成 / 总设定数</p>
+          </div>
         </div>
       </div>
 

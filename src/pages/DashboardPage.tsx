@@ -326,21 +326,23 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Template Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-10">
-        {templateStats.map(({ template, recordCount, lastUpdated }) => {
-          const isInv = isInvestmentTemplate(template.id);
-          return (
-            <TemplateCard
-              key={template.id}
-              template={template}
-              recordCount={recordCount}
-              lastUpdated={lastUpdated}
-              onNewRecord={() => navigate(isInv ? `/form/${INVESTMENT_TEMPLATE_IDS[0]}` : `/form/${template.id}`)}
-              onViewHistory={() => navigate(isInv ? `/history/${INVESTMENT_TEMPLATE_IDS[0]}` : `/history/${template.id}`)}
-            />
-          );
-        })}
+      {/* Template Cards Grid（容器查询流式网格：手机单列 → ≥30rem 两列 → ≥45rem 四列） */}
+      <div className="cq">
+        <div className="cq-grid cq-cols-cards gap-4 mb-10">
+          {templateStats.map(({ template, recordCount, lastUpdated }) => {
+            const isInv = isInvestmentTemplate(template.id);
+            return (
+              <TemplateCard
+                key={template.id}
+                template={template}
+                recordCount={recordCount}
+                lastUpdated={lastUpdated}
+                onNewRecord={() => navigate(isInv ? `/form/${INVESTMENT_TEMPLATE_IDS[0]}` : `/form/${template.id}`)}
+                onViewHistory={() => navigate(isInv ? `/history/${INVESTMENT_TEMPLATE_IDS[0]}` : `/history/${template.id}`)}
+              />
+            );
+          })}
+        </div>
       </div>
 
       <RecentRecords

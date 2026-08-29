@@ -98,3 +98,64 @@
 .animate-slideDown {
   animation: slideDown 0.3s ease-out;
 }
+
+/* ===== 容器查询网格（局部适配：按父容器宽度而非视口切换列数） ===== */
+/* 配套 shared-core responsive.css 的 .cq 容器（container-type: inline-size）：
+ * 父容器加 .cq，网格加 .cq-grid + 下列列数类。断点跟随内容实际宽度而非视口，
+ * 侧边栏折叠 / 抽屉展开不影响内部布局；42rem / 45rem 对应桌面主内容区
+ * （≥1024px 视口、侧边栏展开）下的实际可用宽度，保证桌面列数与原 md:/lg: 断点一致。 */
+.cq-grid {
+  display: grid;
+}
+/* grid 子项防溢出：长词 / 图表不撑破列宽 */
+.cq-grid > * {
+  min-width: 0;
+}
+/* 跨整行（如表格类字段） */
+.cq-span-2 {
+  grid-column: 1 / -1;
+}
+
+/* 紧凑统计卡网格：窄容器保持 2 列，容器 ≥42rem 展开为 3/4 列 */
+.cq-cols-3,
+.cq-cols-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* 宽内容网格（输入 / 文本块）：窄容器单列，避免内容挤压 */
+.cq-cols-2,
+.cq-cols-3-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 模板卡片网格（首页）：手机单列 → ≥30rem 两列 → ≥45rem 四列 */
+.cq-cols-cards {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 30rem) {
+  .cq-cols-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 42rem) {
+  .cq-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cq-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cq-cols-3-wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cq-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 45rem) {
+  .cq-cols-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

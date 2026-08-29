@@ -45,7 +45,8 @@ export default function DailyStats({ timeRange }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="cq">
+        <div className="cq-grid cq-cols-2 gap-3">
         <div className="rounded-lg border p-3 bg-green-50 border-green-100">
           <p className="text-xs text-gray-500 mb-1">复盘天数</p>
           <p className="text-xl font-bold text-green-700">{stats.totalDays}</p>
@@ -55,6 +56,7 @@ export default function DailyStats({ timeRange }: Props) {
           <p className="text-xs text-gray-500 mb-1">连续天数</p>
           <p className="text-xl font-bold text-blue-700">{stats.streakDays}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">从最近一天向前</p>
+        </div>
         </div>
       </div>
 

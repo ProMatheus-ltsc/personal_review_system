@@ -390,7 +390,7 @@ const ReferenceSidebar: React.FC<ReferenceSidebarProps> = ({ templateId, year })
               className="fixed inset-0 bg-black/30 z-40"
               onClick={() => setIsMobileOpen(false)}
             />
-            <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl max-h-[75vh] flex flex-col animate-slideUp">
+            <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl max-h-[75vh] flex flex-col animate-slideUp safe-area">
               {sidebarContent}
             </div>
           </>

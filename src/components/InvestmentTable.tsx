@@ -9,6 +9,7 @@ import type { FormRecord } from '@/types';
 import { isFieldEmpty } from '@/utils/formValidation';
 import { readReviews } from '@/services/investmentMerge';
 import clsx from 'clsx';
+import { TableScroll } from '@shared/core';
 
 interface InvestmentTableProps {
   records: FormRecord[];
@@ -92,7 +93,8 @@ export default function InvestmentTable({ records, onSelect }: InvestmentTablePr
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+    <div className="bg-white rounded-lg border border-gray-200">
+      <TableScroll label="投资交易记录">
       <table className="w-full text-sm min-w-[760px]">
         <thead>
           <tr className="bg-gray-50 text-left text-xs text-gray-500">
@@ -150,6 +152,7 @@ export default function InvestmentTable({ records, onSelect }: InvestmentTablePr
           })}
         </tbody>
       </table>
+      </TableScroll>
     </div>
   );
 }

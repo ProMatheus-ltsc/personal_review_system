@@ -110,16 +110,18 @@ export default function ReviewContextInline({
   return (
     <div className="mb-4 bg-violet-50/60 border border-violet-200 rounded-lg p-3 space-y-2">
       <p className="text-xs font-semibold text-violet-800">📐 买入预期 vs 卖出结果</p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-        <InfoRow title="目标价达成" ok={targetOk} warn={targetOk === false}>
-          {targetNode}
-        </InfoRow>
-        <InfoRow title="止损纪律" ok={stopOk} warn={stopOk === false}>
-          {stopNode}
-        </InfoRow>
-        <InfoRow title="持有周期">
-          {holdNode}
-        </InfoRow>
+      <div className="cq">
+        <div className="cq-grid cq-cols-3-wide gap-3 text-xs">
+          <InfoRow title="目标价达成" ok={targetOk} warn={targetOk === false}>
+            {targetNode}
+          </InfoRow>
+          <InfoRow title="止损纪律" ok={stopOk} warn={stopOk === false}>
+            {stopNode}
+          </InfoRow>
+          <InfoRow title="持有周期">
+            {holdNode}
+          </InfoRow>
+        </div>
       </div>
     </div>
   );

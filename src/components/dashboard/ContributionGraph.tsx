@@ -7,6 +7,7 @@
  */
 import { useMemo, useState } from 'react';
 import { startOfWeek, startOfYear, endOfYear, addWeeks, addDays, format, isSameMonth, differenceInCalendarWeeks } from 'date-fns';
+import { TableScroll } from '@shared/core';
 
 interface ContributionGraphProps {
   records: { createdAt: string }[];
@@ -67,7 +68,7 @@ export default function ContributionGraph({ records }: ContributionGraphProps) {
   const totalInYear = records.filter((r) => new Date(r.createdAt).getFullYear() === year).length;
 
   return (
-    <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4 overflow-x-auto">
+    <div className="mb-6 bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3 gap-3">
         <h3 className="text-sm font-semibold text-gray-800">📈 复盘热力图</h3>
         <div className="flex items-center gap-2">
@@ -84,8 +85,8 @@ export default function ContributionGraph({ records }: ContributionGraphProps) {
         </div>
       </div>
 
-      <div className="flex justify-center">
-        <div className="inline-block min-w-max">
+      <TableScroll label="复盘热力图">
+        <div className="w-max mx-auto">
           {/* 月份标签 */}
           <div className="flex">
             <div className="w-8 flex-shrink-0" />
@@ -164,7 +165,7 @@ export default function ContributionGraph({ records }: ContributionGraphProps) {
             <span>多</span>
           </div>
         </div>
-      </div>
+      </TableScroll>
     </div>
   );
 }

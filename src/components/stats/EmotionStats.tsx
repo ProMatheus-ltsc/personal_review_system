@@ -45,7 +45,8 @@ export default function EmotionStats({ timeRange }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="cq">
+        <div className="cq-grid cq-cols-2 gap-3">
         <div className="rounded-lg border p-3 bg-purple-50 border-purple-100">
           <p className="text-xs text-gray-500 mb-1">记录总数</p>
           <p className="text-xl font-bold text-purple-700">{stats.totalRecords}</p>
@@ -55,6 +56,7 @@ export default function EmotionStats({ timeRange }: Props) {
           <p className="text-xs text-gray-500 mb-1">触发因素</p>
           <p className="text-xl font-bold text-blue-700">{stats.triggerCount}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">已记录触发点</p>
+        </div>
         </div>
       </div>
 

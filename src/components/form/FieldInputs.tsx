@@ -10,6 +10,7 @@
 import { useState } from 'react';
 import type { FormField, QuadrantKey, QuadrantMatrix, DragMatrixValue } from '@/types';
 import { DEFAULT_QUADRANTS, DEFAULT_DRAG_QUADRANTS, QUADRANT_KEYS, isQuadrantMatrix } from '@/constants/quadrant';
+import { TableScroll } from '@shared/core';
 
 /** 输入组件统一 props：字段定义 + 样式 + 受控/非受控双模式 */
 export interface InputFieldProps {
@@ -371,8 +372,13 @@ export function TableInput({ field, value, onChange }: InputFieldProps) {
   };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse border border-gray-200 rounded-lg overflow-hidden">
+    <div>
+      <TableScroll label={field.label}>
+      <table
+        className={`w-full border-collapse border border-gray-200 rounded-lg overflow-hidden ${
+          columns.length >= 6 ? 'min-w-[640px]' : columns.length >= 4 ? 'min-w-[480px]' : ''
+        }`}
+      >
         <thead>
           <tr className="bg-gray-50">
             {columns.map((col) => (
@@ -438,6 +444,7 @@ export function TableInput({ field, value, onChange }: InputFieldProps) {
           ))}
         </tbody>
       </table>
+      </TableScroll>
       <button
         type="button"
         onClick={addRow}
@@ -480,7 +487,8 @@ export function QuadrantInput({ field, value, onChange }: InputFieldProps) {
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div className="cq">
+      <div className="cq-grid cq-cols-2 gap-3">
       {quadrants.map((q) => {
         const items = matrix[q.key] || [];
         const isFocus = q.key === 'q2';
@@ -545,6 +553,7 @@ export function QuadrantInput({ field, value, onChange }: InputFieldProps) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

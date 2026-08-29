@@ -9,6 +9,7 @@
  * 当前价保存在 localStorage（key: position_price_{code}），跨会话保留。
  */
 import { useMemo, useState } from 'react';
+import { TableScroll } from '@shared/core';
 
 export interface PositionItem {
   recordId: string;
@@ -90,7 +91,7 @@ export default function PositionOverview({ positions, onOpen }: PositionOverview
         <span className="text-[11px] text-gray-400">{positions.length} 只标的</span>
       </div>
 
-      <div className="overflow-x-auto">
+      <TableScroll label="当前持仓">
         <table className="w-full text-xs min-w-[560px]">
           <thead>
             <tr className="bg-gray-50 text-left text-gray-500">
@@ -167,7 +168,7 @@ export default function PositionOverview({ positions, onOpen }: PositionOverview
             </tr>
           </tfoot>
         </table>
-      </div>
+      </TableScroll>
 
       <p className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100 bg-gray-50/40">
         填当前价可估算浮盈（按剩余持仓 ×（市价 − 加权成本））；点击行进入持仓单据。

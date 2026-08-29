@@ -14,6 +14,7 @@ import {
   getAllInvestmentRecords,
 } from '@/services/investmentStats';
 import type { TimeRange } from '@/services/stats';
+import { TableScroll } from '@shared/core';
 
 interface Props {
   timeRange: TimeRange;
@@ -146,7 +147,7 @@ export default function InvestmentStats({ timeRange }: Props) {
                 </div>
 
                 {/* 逐笔买入/卖出明细（按时间排序） */}
-                <div className="overflow-x-auto">
+                <TableScroll label="逐笔交易明细">
                   <table className="w-full text-xs min-w-[680px]">
                     <thead>
                       <tr className="text-left text-gray-400">
@@ -181,7 +182,7 @@ export default function InvestmentStats({ timeRange }: Props) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableScroll>
               </div>
             ))}
           </div>

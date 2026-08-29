@@ -8,6 +8,7 @@
  */
 import type { ReactNode } from 'react';
 import type { FormRecord } from '@/types';
+import { TableScroll } from '@shared/core';
 
 interface MergeLot {
   date?: string;
@@ -140,7 +141,8 @@ export default function InvestmentMergePanel({
               <Row label="剩余持仓" value={remaining > 0 ? remaining : 0} />
             )}
           </div>
-          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+          <div className="bg-white rounded-lg border border-gray-200">
+            <TableScroll label="买入明细">
             {hasLinkedBuy ? (
               <table className="w-full text-xs min-w-[720px]">
                 <thead>
@@ -196,6 +198,7 @@ export default function InvestmentMergePanel({
                 </tbody>
               </table>
             )}
+            </TableScroll>
           </div>
         </div>
       )}
@@ -208,7 +211,8 @@ export default function InvestmentMergePanel({
             <Row label="总卖出数量" value={fmt(totalSellQty, 0)} />
             {remaining !== undefined && <Row label="剩余持仓" value={remaining > 0 ? remaining : 0} />}
           </div>
-          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+          <div className="bg-white rounded-lg border border-gray-200">
+            <TableScroll label="卖出明细">
             {hasLinkedSell ? (
               <table className="w-full text-xs min-w-[600px]">
                 <thead>
@@ -258,6 +262,7 @@ export default function InvestmentMergePanel({
                 </tbody>
               </table>
             )}
+            </TableScroll>
           </div>
         </div>
       )}

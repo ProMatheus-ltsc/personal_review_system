@@ -453,7 +453,7 @@ export default function HistoryPage() {
 
       {/* 批量操作栏 */}
       {selectionMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg px-4 py-3 z-50">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg px-4 py-3 z-50 safe-area">
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
             <span className="text-sm text-gray-600">
               已选 <span className="font-semibold text-indigo-600">{selectedIds.size}</span> 项

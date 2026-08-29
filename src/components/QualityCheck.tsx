@@ -51,7 +51,10 @@ const QualityCheck: React.FC<QualityCheckProps> = ({ isOpen, onClose, recordId: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl max-w-md w-full shadow-xl p-6 animate-fadeIn">
+      <div
+        className="modal-clamp bg-white rounded-xl max-w-md w-full shadow-xl p-6 animate-fadeIn overflow-y-auto"
+        style={{ '--modal-max': '28rem' } as React.CSSProperties}
+      >
         {/* Title */}
         <h2 className="text-lg font-semibold text-gray-900 mb-1">📋 复盘质量自检</h2>
         <p className="text-sm text-gray-500 mb-5">高质量复盘的5个标准</p>

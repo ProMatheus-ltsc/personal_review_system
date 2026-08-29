@@ -45,32 +45,34 @@ export default function DecisionStats({ timeRange }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* 核心指标网格 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          label="决策总数"
-          value={stats.totalDecisions}
-          subtext={`已完成 ${stats.completedDecisions}`}
-          color="blue"
-        />
-        <StatCard
-          label="后悔率"
-          value={stats.regretRate !== null ? `${stats.regretRate}%` : '-'}
-          subtext="有后悔/疑虑的占比"
-          color={stats.regretRate !== null && stats.regretRate > 50 ? 'red' : 'green'}
-        />
-        <StatCard
-          label="预期准确率"
-          value={stats.predictionAccuracy !== null ? `${stats.predictionAccuracy}%` : '-'}
-          subtext="符合/超预期的占比"
-          color={stats.predictionAccuracy !== null && stats.predictionAccuracy >= 60 ? 'green' : 'yellow'}
-        />
-        <StatCard
-          label="已排除偏差"
-          value={stats.topBiases.length > 0 ? stats.topBiases.length : '-'}
-          subtext="确认无此偏差的类型数"
-          color="purple"
-        />
+      {/* 核心指标网格（容器查询：窄容器两列，≥42rem 四列） */}
+      <div className="cq">
+        <div className="cq-grid cq-cols-4 gap-3">
+          <StatCard
+            label="决策总数"
+            value={stats.totalDecisions}
+            subtext={`已完成 ${stats.completedDecisions}`}
+            color="blue"
+          />
+          <StatCard
+            label="后悔率"
+            value={stats.regretRate !== null ? `${stats.regretRate}%` : '-'}
+            subtext="有后悔/疑虑的占比"
+            color={stats.regretRate !== null && stats.regretRate > 50 ? 'red' : 'green'}
+          />
+          <StatCard
+            label="预期准确率"
+            value={stats.predictionAccuracy !== null ? `${stats.predictionAccuracy}%` : '-'}
+            subtext="符合/超预期的占比"
+            color={stats.predictionAccuracy !== null && stats.predictionAccuracy >= 60 ? 'green' : 'yellow'}
+          />
+          <StatCard
+            label="已排除偏差"
+            value={stats.topBiases.length > 0 ? stats.topBiases.length : '-'}
+            subtext="确认无此偏差的类型数"
+            color="purple"
+          />
+        </div>
       </div>
 
       {/* 认知偏见 Top 3 */}
