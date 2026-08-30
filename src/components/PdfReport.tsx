@@ -5,17 +5,15 @@
  * 核心概念：这是一个"虚拟组件"，不会在页面渲染，而是被 @react-pdf/renderer 编译成 PDF；
  * 样式使用 StyleSheet.create 声明的 PDF 专用样式（flex 布局、单位为 pt）。
  */
-import { Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
+import { Font, Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { registerPdfChineseFont } from '@shared/core/utils/pdfFont';
 import type { FormRecord, FormTemplate, FormField, TableColumn } from '@/types';
 import { DEFAULT_QUADRANTS, DEFAULT_DRAG_QUADRANTS, isQuadrantMatrix, isDragMatrixValue } from '@/constants/quadrant';
 import { migrateLegacyMatrixData } from '@/services/legacyMigrate';
 
-// 注册中文字体：@react-pdf/renderer 自带的字体不含中文字形，
-// 不注册会导致中文在 PDF 中显示为方框（乱码），这里从 Google Fonts 加载 Noto Sans SC
-Font.register({
-  family: 'Noto Sans SC',
-  src: 'https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_EnYxNbPzS5HE.ttf',
-});
+// 中文字体本地化：fonts.gstatic.com 在部分网络不可达，远程 fetch 会导致 toBlob() 抛 Failed to fetch；
+// 字体文件随 public/fonts/ 分发，注册逻辑沉淀在 @shared/core/utils/pdfFont
+registerPdfChineseFont(Font, import.meta.env.BASE_URL);
 
 /** PDF 专用样式表：类似 CSS，但由 react-pdf 解析（flexDirection、marginTop 等命名与 Web 略有差异） */
 const styles = StyleSheet.create({
