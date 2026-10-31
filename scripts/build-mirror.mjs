@@ -87,18 +87,54 @@ async function readExport(file) {
   return data.records;
 }
 
+/**
+ * 把一条外部记录规范成合法的 FormRecord
+ *
+ * 与 src/services/mirrorSync.ts 的 normalizeRecord 保持同一套规则：
+ * 字段名写错（如把 data 写成 content）、漏 title/status 都会被这里纠正或丢弃，
+ * 避免把无法渲染的记录写进底稿。
+ *
+ * @returns 规范化后的记录，或 null（记录不可用）
+ */
+function normalizeRecord(record) {
+  if (!record || typeof record !== 'object') return null;
+  const { id, templateId, data } = record;
+  if (typeof id !== 'string' || !id) return null;
+  if (typeof templateId !== 'string' || !VALID_TEMPLATE_IDS.has(templateId)) return null;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+
+  const createdAt = typeof record.createdAt === 'string' && record.createdAt ? record.createdAt : new Date().toISOString();
+  const updatedAt = typeof record.updatedAt === 'string' && record.updatedAt ? record.updatedAt : createdAt;
+  const title = typeof record.title === 'string' && record.title.trim() ? record.title.trim() : '未命名记录';
+
+  const out = {
+    id,
+    templateId,
+    title,
+    data,
+    status: record.status === 'draft' ? 'draft' : 'completed',
+    createdAt,
+    updatedAt,
+  };
+  if (Array.isArray(record.tags)) out.tags = record.tags.filter((t) => typeof t === 'string');
+  if (typeof record.module === 'string' && record.module) out.module = record.module;
+  return out;
+}
+
 /** 多份导出按 id 去重，保留 updatedAt 较新的一条 */
 function mergeAll(lists) {
   const byId = new Map();
-  let dropped = 0;
+  const dropped = { invalid: 0, noData: 0 };
   for (const list of lists) {
     for (const record of list) {
-      if (!record?.id || !VALID_TEMPLATE_IDS.has(record.templateId)) {
-        dropped += 1;
+      const normalized = normalizeRecord(record);
+      if (!normalized) {
+        if (record && typeof record === 'object' && record.id && !record.data) dropped.noData += 1;
+        else dropped.invalid += 1;
         continue;
       }
-      const current = byId.get(record.id);
-      if (!current || stamp(record) > stamp(current)) byId.set(record.id, record);
+      const current = byId.get(normalized.id);
+      if (!current || stamp(normalized) > stamp(current)) byId.set(normalized.id, normalized);
     }
   }
   const records = [...byId.values()].sort((a, b) => stamp(a) - stamp(b));
@@ -181,7 +217,10 @@ async function main() {
     console.error('错误：合并后没有有效记录');
     process.exit(1);
   }
-  if (dropped > 0) console.log(`  跳过无效记录 ${dropped} 条（缺 id 或模板不在白名单）`);
+  if (dropped.invalid > 0) console.log(`  跳过 ${dropped.invalid} 条（缺 id 或模板不在白名单）`);
+  if (dropped.noData > 0) {
+    console.log(`  跳过 ${dropped.noData} 条（缺 data 字段——注意字段名是 data，不是 content）`);
+  }
 
   const byTemplate = records.reduce((acc, r) => {
     acc[r.templateId] = (acc[r.templateId] || 0) + 1;

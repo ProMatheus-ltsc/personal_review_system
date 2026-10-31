@@ -209,12 +209,53 @@ const VALID_TEMPLATE_IDS = new Set<string>([
 ]);
 
 /**
+ * 把外部来源的记录规范成合法的 FormRecord
+ *
+ * 为什么必须做：镜像由构建脚本或 AI 生成，字段名写错（例如把 data 写成 content）、
+ * 漏 title、漏 status 都是真实发生过的情况。IndexedDB 不做 schema 校验，
+ * 原样 put 进去会让列表页出现空白标题、详情页读不到字段的记录，
+ * 且这种脏数据一旦写入就很难定位来源。因此在入口处统一兜底。
+ *
+ * @returns 规范化后的记录；数据不足以渲染时返回 null，交由调用方计入 skipped
+ */
+function normalizeRecord(raw: unknown): FormRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || !r.id) return null;
+  if (typeof r.templateId !== 'string' || !VALID_TEMPLATE_IDS.has(r.templateId)) return null;
+
+  // data 是页面的唯一数据源，缺失或不是对象则该记录无法渲染，直接丢弃
+  const data = r.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+
+  const createdAt = typeof r.createdAt === 'string' && r.createdAt ? r.createdAt : new Date().toISOString();
+  const updatedAt = typeof r.updatedAt === 'string' && r.updatedAt ? r.updatedAt : createdAt;
+  const title = typeof r.title === 'string' && r.title.trim() ? r.title.trim() : '未命名记录';
+
+  const record: FormRecord = {
+    id: r.id,
+    templateId: r.templateId,
+    title,
+    data: data as Record<string, unknown>,
+    status: r.status === 'draft' ? 'draft' : 'completed',
+    createdAt,
+    updatedAt,
+  };
+  if (Array.isArray(r.tags)) {
+    record.tags = r.tags.filter((t): t is string => typeof t === 'string');
+  }
+  if (typeof r.module === 'string' && r.module) record.module = r.module;
+  return record;
+}
+
+
+/**
  * 把镜像记录按 LWW 合并进本地库
  *
  * @returns 新增/更新/跳过 的条数统计
  */
 export async function mergeMirrorRecords(
-  records: FormRecord[]
+  records: readonly unknown[]
 ): Promise<Pick<MirrorSyncResult, 'added' | 'updated' | 'skipped'>> {
   const db = await initDB();
   const existing = (await db.getAll('records')) as FormRecord[];
@@ -225,8 +266,9 @@ export async function mergeMirrorRecords(
   let skipped = 0;
 
   const tx = db.transaction('records', 'readwrite');
-  for (const record of records) {
-    if (!record?.id || !VALID_TEMPLATE_IDS.has(record.templateId)) {
+  for (const raw of records) {
+    const record = normalizeRecord(raw);
+    if (!record) {
       skipped += 1;
       continue;
     }
