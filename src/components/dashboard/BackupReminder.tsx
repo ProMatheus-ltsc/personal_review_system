@@ -40,10 +40,11 @@ export default function BackupReminder({
                 <li>• 清除浏览器缓存/数据时（最常见原因）</li>
                 <li>• 换电脑或换浏览器时</li>
                 <li>• 重装操作系统时</li>
-                <li>• 想在其他浏览器或其他设备上使用时（数据不会自动同步）</li>
+                <li>• 想在其他浏览器或其他设备上使用时（本机新填的记录不会自动上传）</li>
               </ul>
             </div>
             <p>在「数据管理」页面可一键导出备份（3秒），需要时再导入恢复。</p>
+            <p className="mt-1">云端整理好的底稿可在「数据管理 → 云端底稿」用口令同步下来，多台设备输同一口令即可。</p>
           </div>
           <button
             onClick={dismissFirstVisit}

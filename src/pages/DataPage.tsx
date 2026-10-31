@@ -21,6 +21,7 @@ import {
 } from '@/services/db';
 import { templates } from '@/templates';
 import { exportRecordsAsMarkdown, generateAnnualReport } from '@/services/batchExport';
+import { syncMirror, savedPassword, rememberPassword, MirrorSyncError } from '@/services/mirrorSync';
 import { StatsPanel } from '@/components/stats';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { COOLDOWN_SETTINGS, DEFAULT_COOLDOWN_DAYS } from '@/templates/investmentChecklist';
@@ -60,6 +61,11 @@ export default function DataPage() {
   const [docYear, setDocYear] = useState<string>(String(new Date().getFullYear()));
   const [docExporting, setDocExporting] = useState(false);
   const [docMessage, setDocMessage] = useState<string | null>(null);
+  // 云端底稿同步（加密镜像，只读方向）
+  const [mirrorPassword, setMirrorPassword] = useState<string>(() => savedPassword());
+  const [mirrorRemember, setMirrorRemember] = useState<boolean>(() => Boolean(savedPassword()));
+  const [mirrorBusy, setMirrorBusy] = useState(false);
+  const [mirrorResult, setMirrorResult] = useState<{ ok: boolean; text: string } | null>(null);
   // 可选年份：今年 + 前 4 年
   const years = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i));
 
@@ -186,6 +192,36 @@ export default function DataPage() {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '未知错误';
       setImportResult(`导入失败：${message}`);
+    }
+  };
+
+  /**
+   * 云端底稿同步：拉取加密镜像 → 口令解密 → 按 LWW 合并
+   *
+   * 合并只做「补充新增」和「覆盖更晚修改的」，不会删除本机任何记录，
+   * 因此可以放心反复执行。
+   */
+  const handleMirrorSync = async () => {
+    const pwd = mirrorPassword.trim();
+    if (!pwd) {
+      setMirrorResult({ ok: false, text: '请先输入同步口令' });
+      return;
+    }
+    setMirrorBusy(true);
+    setMirrorResult(null);
+    try {
+      const r = await syncMirror(pwd);
+      rememberPassword(mirrorRemember ? pwd : null);
+      const parts = [`同步完成：底稿 ${r.total} 条 → 新增 ${r.added}，更新 ${r.updated}，跳过 ${r.skipped}`];
+      if (r.builtAt) parts.push(`底稿生成于 ${new Date(r.builtAt).toLocaleString('zh-CN')}`);
+      if (r.added + r.updated === 0) parts.push('本机已是最新');
+      setMirrorResult({ ok: true, text: parts.join('\n') });
+      await loadData();
+    } catch (err: unknown) {
+      const message = err instanceof MirrorSyncError ? err.message : '同步失败，请重试';
+      setMirrorResult({ ok: false, text: message });
+    } finally {
+      setMirrorBusy(false);
     }
   };
 
@@ -407,6 +443,64 @@ export default function DataPage() {
                 {importResult}
               </p>
             )}
+          </div>
+        </section>
+
+        {/* 云端底稿（加密镜像，只读同步） */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <span>☁️</span> 云端底稿
+          </h2>
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <p className="text-sm text-gray-600 mb-4">
+              把云端整理好的复盘记录合并到本机，多台设备输同一个口令即可看到同一份底稿。
+              镜像以密文形式公开托管，未持有口令无法解开。
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 mb-3">
+              <input
+                type="password"
+                value={mirrorPassword}
+                onChange={(e) => setMirrorPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !mirrorBusy) handleMirrorSync();
+                }}
+                placeholder="同步口令"
+                autoComplete="off"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                onClick={handleMirrorSync}
+                disabled={mirrorBusy}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {mirrorBusy ? '同步中...' : '同步云端底稿'}
+              </button>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mirrorRemember}
+                onChange={(e) => {
+                  setMirrorRemember(e.target.checked);
+                  if (!e.target.checked) rememberPassword(null);
+                }}
+                className="rounded text-indigo-600"
+              />
+              在本机记住口令（存于浏览器 localStorage，公共设备不建议勾选）
+            </label>
+            {mirrorResult && (
+              <p
+                className={`mt-3 text-sm whitespace-pre-line ${
+                  mirrorResult.ok ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {mirrorResult.text}
+              </p>
+            )}
+            <p className="mt-3 text-[11px] text-gray-400">
+              合并只会补充新记录、更新修改时间更晚的记录，不会删除本机已有数据，可反复执行。
+              反方向（本机 → 云端）不在自动同步范围内：本机新填的内容请先用上方「导出数据」交回整理，再重新生成底稿。
+            </p>
           </div>
         </section>
 
