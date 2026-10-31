@@ -17,7 +17,7 @@
 导出 JSON（本机）
       │
       ▼
-scripts/build-mirror.mjs        ← PBKDF2-SHA256(310000) + AES-GCM-256
+scripts/build-mirror.mjs        ← PBKDF2-SHA256(600000) + AES-GCM-256
       │
       ▼
 public/data/records.enc.json    ← 密文，可安全公开
@@ -31,8 +31,8 @@ public/data/records.enc.json    ← 密文，可安全公开
 ```bash
 cd personal_review_system
 
-# 单份导出
-node scripts/build-mirror.mjs --in ~/Downloads/review-backup.json --password '你的口令'
+# 单份导出（口令不足 12 位时追加 --allow-public）
+node scripts/build-mirror.mjs --in ~/Downloads/review-backup.json --password '你的口令' --allow-public
 
 # 多份导出（去重，保留 updatedAt 较新的一条）
 node scripts/build-mirror.mjs --in exports/*.json --password '你的口令'
@@ -47,7 +47,17 @@ node scripts/build-mirror.mjs --in a.json --password 'x' --dry-run
 MIRROR_PASSWORD='你的口令' node scripts/build-mirror.mjs --in backup.json
 ```
 
-口令强度要求：至少 12 位，不能是纯数字。不足时脚本会拦截（可用 `--allow-public` 强行跳过，不建议）。
+### 口令与强度
+
+迭代次数：**PBKDF2-SHA256 600000 次**（OWASP 2023 对 PBKDF2-SHA256 的推荐值），
+密文头部会记录 `iter`，前端解密按密文自带的 `iter` 派生密钥，因此改迭代次数不需要同步改前端。
+60 万次在浏览器里约 0.3~0.8 秒，可接受。
+
+口令强度要求：至少 12 位，不能是纯数字。不足时脚本会拦截，须加 `--allow-public` 才能放行。
+
+当前底稿使用一个 11 位的自定口令（`--allow-public` 放行）。这在熵上偏弱，
+之所以还能接受，是因为迭代次数已拉到 60 万，把单次猜测成本提高到约两倍。
+若将来记录里出现更敏感的内容，建议换成长口令重新生成一次底稿——换口令不需要改任何代码。
 
 ## 在设备上同步
 

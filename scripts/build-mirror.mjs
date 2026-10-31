@@ -21,7 +21,7 @@
  *   --allow-public    跳过"口令强度不足"的拦截（不建议）
  *
  * 算法与前端 src/services/mirrorSync.ts 严格一致：
- *   PBKDF2-SHA256(310000 次) → AES-GCM-256，salt 16 字节、iv 12 字节，均为随机值
+ *   PBKDF2-SHA256(600000 次) → AES-GCM-256，salt 16 字节、iv 12 字节，均为随机值
  */
 
 import { webcrypto as crypto } from 'node:crypto';
@@ -35,7 +35,11 @@ const VALID_TEMPLATE_IDS = new Set([
   'investment_checklist_buy', 'investment_checklist_sell', 'investment_checklist_position',
 ]);
 
-const ITERATIONS = 310_000;
+/**
+ * PBKDF2 迭代次数，OWASP 2023 对 PBKDF2-SHA256 的推荐值为 600000。
+ * 前端解密读取密文自带的 iter 字段，因此调整此值无需改前端。
+ */
+const ITERATIONS = 600_000;
 
 function parseArgs(argv) {
   const opts = { inputs: [], out: 'public/data/records.enc.json', password: '', dryRun: false, allowPublic: false };
