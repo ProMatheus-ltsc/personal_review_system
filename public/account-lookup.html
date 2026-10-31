@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>本机账户查询 · 个人复盘系统</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 16px 48px;
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f7f7f8; color: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16171a; color: #e8e8e8; }
+    .card { background: #212226 !important; border-color: #333 !important; }
+    .muted { color: #9aa0a6 !important; }
+    code { background: #2c2e33 !important; }
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  .sub { font-size: 13px; color: #666; margin: 0 0 18px; }
+  .card {
+    background: #fff; border: 1px solid #e5e5e7; border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 12px;
+  }
+  .acc { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .acc + .acc { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e0e0e2; }
+  .name { font-size: 17px; font-weight: 600; letter-spacing: .3px; }
+  .meta { font-size: 12.5px; color: #777; margin-top: 2px; }
+  .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3b5bdb; white-space: nowrap; }
+  .muted { color: #666; }
+  code { background: #f0f0f2; padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+  ul { margin: 8px 0 0; padding-left: 18px; }
+  li { margin: 4px 0; font-size: 13.5px; }
+  .err { color: #c92a2a; }
+  .ok { color: #2b8a3e; }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid #d0d0d4; background: #fff; color: inherit;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>本机账户查询</h1>
+  <p class="sub">只读取<strong>当前浏览器</strong>里的本地数据库，不上传任何内容。换设备或换浏览器结果会不同。</p>
+  <div class="card" id="status"><span class="muted">读取中…</span></div>
+  <div id="accounts"></div>
+  <div class="card">
+    <div class="muted" style="font-size:13px">所有本地库</div>
+    <ul id="dbs"></ul>
+  </div>
+  <div class="card">
+    <div class="muted" style="font-size:13px;margin-bottom:6px">找不到账户怎么办</div>
+    <ul>
+      <li>换一个浏览器再打开本页（Chrome / Safari / 微信内置浏览器各自独立）</li>
+      <li>手机上试过的话，用手机打开同一地址</li>
+      <li>实在没有：回到站点首页，用「忘记密码？」按账户名重置，或直接重新注册一个账户</li>
+    </ul>
+  </div>
+</div>
+<script>
+(async function () {
+  const statusEl = document.getElementById('status');
+  const accEl = document.getElementById('accounts');
+  const dbsEl = document.getElementById('dbs');
+
+  const openDb = (name) => new Promise((resolve, reject) => {
+    const req = indexedDB.open(name);
+    req.onerror = () => reject(req.error || new Error('打开失败'));
+    req.onsuccess = () => resolve(req.result);
+  });
+
+  const getAll = (db, store) => new Promise((resolve) => {
+    if (!db.objectStoreNames.contains(store)) { db.close(); return resolve([]); }
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+
+  const countRecords = async (dbName) => {
+    try {
+      const db = await openDb(dbName);
+      const rows = await getAll(db, 'records');
+      db.close();
+      return rows.length;
+    } catch { return null; }
+  };
+
+  try {
+    if (!indexedDB || !indexedDB.databases) {
+      statusEl.innerHTML = '<span class="err">当前浏览器不支持 enumerating IndexedDB，请换 Chrome / Edge / Safari 新版本。</span>';
+      return;
+    }
+    const names = (await indexedDB.databases()).map(d => d.name).filter(Boolean);
+    dbsEl.innerHTML = names.length
+      ? names.map(n => '<li><code>' + n + '</code></li>').join('')
+      : '<li class="muted">未发现任何本地库</li>';
+
+    let accounts = [];
+    if (names.includes('review-app')) {
+      const meta = await openDb('review-app');
+      accounts = await getAll(meta, 'accounts');
+      meta.close();
+    }
+
+    if (!accounts.length) {
+      statusEl.innerHTML = '<span class="err">没有查到已注册账户。</span> 这个浏览器里很可能从没创建过账户，或者清过网站数据。';
+      return;
+    }
+
+    statusEl.innerHTML = '共找到 <strong>' + accounts.length + '</strong> 个账户：';
+    const html = [];
+    for (const a of accounts) {
+      const id = a.id || a.username || '(无名称)';
+      const created = a.createdAt ? new Date(a.createdAt).toLocaleString('zh-CN') : '未知';
+      const cnt = await countRecords('review-app-' + id);
+      html.push(
+        '<div class="card"><div class="acc"><div>' +
+        '<div class="name">' + id.replace(/[<>&]/g, '') + '</div>' +
+        '<div class="meta">创建于 ' + created + (cnt === null ? '' : ' · ' + cnt + ' 条记录') + '</div>' +
+        '</div><span class="badge">账户名</span></div></div>'
+      );
+    }
+    accEl.innerHTML = html.join('');
+  } catch (e) {
+    statusEl.innerHTML = '<span class="err">读取失败：' + (e && e.message ? e.message : e) + '</span>';
+  }
+})();
+</script>
+</body>
+</html>
