@@ -27,11 +27,14 @@ const HistoryPage = React.lazy(() => import('@/pages/HistoryPage'));
 const DataPage = React.lazy(() => import('@/pages/DataPage'));
 
 function App() {
-  // 测试账户初始化（幂等）：密码 admin/admin + 各场景复盘等待期默认 0 天 + 自动填充测试数据。
+  // 测试账户初始化仅限开发环境：
+  // 该函数会在 admin 业务库写入 0 天等待期并填充测试数据，生产环境执行会让
+  // 公开站点上始终存在 admin/admin 账户，也会覆盖默认的 30 天等待期。
   // 等待初始化完成后再渲染路由，避免登录页与密码设置的竞态。
-  const [initDone, setInitDone] = useState(false);
+  const [initDone, setInitDone] = useState(!import.meta.env.DEV);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     initializeTestAccount().finally(() => setInitDone(true));
   }, []);
 

@@ -6,10 +6,12 @@
  * - Ctrl+K / Cmd+K：基于导航菜单的全局搜索面板（shared-core Layout 默认能力）
  * - 认证体系为项目自有 useAuth，通过 user/onLogout 注入 shared-core Layout
  */
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout as SharedLayout } from '@shared/core';
 import { BookOpen, Database, History, Home } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { restoreCooldownDefaults } from '@/services/testData';
 
 // 应用品牌配置（shared-core Layout 顶栏图标 + 名称）
 const APP_CONFIG = {
@@ -31,6 +33,17 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const { username, logout } = useAuth();
+
+  // 一次性修复被测试初始化写死的 0 天等待期（已登录、账户上下文就绪后执行）。
+  // 子页面的 useCooldownSettings 早于本组件执行，修复后刷新一次让读数保持一致；
+  // 修复带迁移标记，只会发生一次。
+  useEffect(() => {
+    let cancelled = false;
+    restoreCooldownDefaults().then((count) => {
+      if (!cancelled && count > 0) window.location.reload();
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // 退出登录后跳转到 /login
   const handleLogout = () => {

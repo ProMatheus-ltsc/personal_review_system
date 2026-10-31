@@ -322,6 +322,20 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 }
 
 /**
+ * 删除一个应用配置项
+ *
+ * 删除后读取该 key 会得到 undefined，调用方应回落到代码里的默认值。
+ * 用于清理被旧逻辑写入、但不应存在的配置（如测试账户的 0 天等待期）。
+ *
+ * @param key - 设置项的键名
+ * @returns Promise<void>
+ */
+export async function deleteSetting(key: string): Promise<void> {
+  const db = await initDB();
+  await db.delete('settings', key);
+}
+
+/**
  * 导出所有记录和设置为 JSON 字符串
  *
  * 导出格式包含版本号、导出时间、应用标识、记录和设置数据，
