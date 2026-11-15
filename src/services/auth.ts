@@ -1,37 +1,28 @@
 /**
- * 认证服务层 — 多账户密码认证（PBKDF2 + SHA-256）
+ * 认证服务层 — 多账户密码认证
  *
- * 多账户设计：
+ * 实现已下沉到 `@shared/core/auth`（统一认证基座），本文件保留项目原有的
+ * 公开 API 签名，供 `hooks/useAuth.ts` 与 `services/testData.ts` 等调用方使用。
+ *
+ * 多账户设计（保持不变）：
  * - 账户以「用户名 + 密码」为凭据，账户信息（id + passwordHash）存储在元库 `review-app` 的
  *   accounts store 中，对全部账户可见（仅用于登录验证，不含业务数据）
  * - 每个账户的业务数据（records/settings）存储在其独立的业务库 `review-app-{accountId}` 中，
  *   通过 db.setCurrentAccountId() 切换当前账户上下文，实现数据隔离
  * - admin 测试账户与普通账户完全隔离：测试数据只写入 admin 自己的业务库
  *
- * 安全设计说明：
- * - 密钥派生算法：PBKDF2（Password-Based Key Derivation Function 2）
- * - 哈希函数：SHA-256，256位输出长度
- * - 迭代次数：100,000 次 — 在安全性和性能之间取得平衡
- * - Salt 策略：每次设置密码时生成 16 字节随机 salt，与 hash 一起存储；
- *   防止彩虹表攻击，且相同密码的不同账户生成不同的 hash
- * - 存储格式：`${saltBase64}:${hashBase64}` — salt 和 hash 均为 base64 编码，用冒号分隔
+ * 安全设计说明（已下沉共享包）：
+ * - 密钥派生：PBKDF2-SHA256，256 位输出，100,000 次迭代
+ * - Salt 策略：每次设置密码生成 16 字节随机 salt，与 hash 一起存储
+ * - 存储格式：`${saltBase64}:${hashBase64}` —— shared-core 的本地驱动原生支持
+ *   这一格式（hashFormat: 'base64'），老账户切换后无需重置密码
  *
  * 会话管理：
  * - 认证成功后 sessionStorage 记录当前账户 id，关闭浏览器标签页后自动失效
- * - 页面刷新时通过 isAuthenticated() 从 session 恢复当前账户上下文
+ * - 页面刷新时由 shared-core 驱动的 restore() 从 session 恢复当前账户上下文
  */
-import {
-  getAccount,
-  createAccount,
-  updateAccountPassword,
-  deleteAccount,
-  listAccounts,
-  deleteAllAccounts,
-  setCurrentAccountId,
-} from './db';
-
-const SESSION_ACCOUNT_KEY = 'review-app-auth-account';
-const SESSION_USERNAME_KEY = 'review-app-auth-username';
+import { getAccount, deleteAccount, deleteAllAccounts, listAccounts } from './db';
+import { localAuthDriver, SESSION_ACCOUNT_KEY, SESSION_USERNAME_KEY, syncBusinessAccount } from './authDriver';
 
 /** 登录/注册结果 */
 export interface AuthResult {
@@ -40,97 +31,9 @@ export interface AuthResult {
 }
 
 /**
- * 对密码进行哈希处理（内部函数）
- *
- * 生成随机 salt 并使用 PBKDF2 派生密钥，返回 `salt:hash` 格式的字符串。
- *
- * @param password - 用户输入的明文密码
- * @returns base64 编码的 `salt:hash` 字符串
- */
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-
-  const hashBuffer = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt,
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256
-  );
-
-  const saltBase64 = btoa(String.fromCharCode(...salt));
-  const hashBase64 = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)));
-
-  return `${saltBase64}:${hashBase64}`;
-}
-
-/**
- * 验证密码是否与存储的哈希匹配
- *
- * 从存储的 hash 中提取 salt，重新执行 PBKDF2 派生，
- * 然后对比计算结果与存储的 hash 是否一致。
- *
- * @param password - 用户输入的明文密码
- * @param storedHash - 存储的 `salt:hash` 格式字符串
- * @returns 密码是否正确
- */
-export async function verifyPassword(
-  password: string,
-  storedHash: string
-): Promise<boolean> {
-  const [saltBase64, hashBase64] = storedHash.split(':');
-  if (!saltBase64 || !hashBase64) return false;
-
-  const salt = new Uint8Array(
-    atob(saltBase64)
-      .split('')
-      .map((c) => c.charCodeAt(0))
-  );
-
-  const encoder = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-
-  const hashBuffer = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt,
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256
-  );
-
-  const computedHashBase64 = btoa(
-    String.fromCharCode(...new Uint8Array(hashBuffer))
-  );
-
-  return computedHashBase64 === hashBase64;
-}
-
-/**
  * 注册新账户（用户名 + 密码）
  *
  * 账户名即账户 id（唯一），已存在则拒绝；密码哈希写入元库 accounts store。
- * 注册成功后需再调用 login 建立会话（或由调用方直接登录）。
  *
  * @param username - 账户名（作为账户唯一 id）
  * @param password - 明文密码（4-20 位）
@@ -142,18 +45,19 @@ export async function registerAccount(username: string, password: string): Promi
   if (password.length < 4 || password.length > 20) {
     return { success: false, error: '密码长度需在 4-20 位之间' };
   }
-  const existing = await getAccount(id);
-  if (existing) return { success: false, error: '该账户名已存在' };
-  const hashedValue = await hashPassword(password);
-  await createAccount(id, hashedValue);
-  return { success: true };
+  try {
+    await localAuthDriver.register({ username: id, password });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : '创建账户失败，请重试' };
+  }
 }
 
 /**
  * 登录（用户名 + 密码）
  *
  * 校验通过后：
- * - setCurrentAccountId(accountId) 切换业务库上下文 → 后续数据读写进入该账户的独立库
+ * - 切��业务库上下文 → 后续数据读写进入该账户的独立库
  * - sessionStorage 记录账户 id（会话标志）
  *
  * @param username - 账户名
@@ -163,16 +67,15 @@ export async function registerAccount(username: string, password: string): Promi
 export async function login(username: string, password: string): Promise<AuthResult> {
   const id = username.trim();
   if (!id) return { success: false, error: '请输入账户名' };
-  const account = await getAccount(id);
-  if (!account) return { success: false, error: '账户不存在' };
-  const verified = await verifyPassword(password, account.passwordHash);
-  if (verified) {
-    setCurrentAccountId(account.id);
-    sessionStorage.setItem(SESSION_ACCOUNT_KEY, account.id);
+  if (!password) return { success: false, error: '请输入密码' };
+  try {
+    await localAuthDriver.login({ username: id, password });
+    // 会话里补记用户名（与历史行为一致，供 getSessionUsername 读取）
     sessionStorage.setItem(SESSION_USERNAME_KEY, id);
     return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : '验证失败，请重试' };
   }
-  return { success: false, error: '密码错误，请重试' };
 }
 
 /**
@@ -190,9 +93,12 @@ export async function setAccountPassword(username: string, newPassword: string):
   }
   const existing = await getAccount(id);
   if (!existing) return { success: false, error: '账户不存在' };
-  const hashedValue = await hashPassword(newPassword);
-  await updateAccountPassword(id, hashedValue);
-  return { success: true };
+  try {
+    await localAuthDriver.resetPassword?.({ username: id, newPassword });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : '修改密码失败，请重试' };
+  }
 }
 
 /**
@@ -210,12 +116,14 @@ export async function resetAccount(username: string): Promise<AuthResult> {
   if (!id) return { success: false, error: '请输入要重置的账户名' };
   const existing = await getAccount(id);
   if (!existing) return { success: false, error: '账户不存在，请核对账户名' };
+  // 删除该账户的登录凭据（业务数据保留在 review-app-{账户名} 业务库中，
+  // 重新注册同名账户即可恢复）
   await deleteAccount(id);
-  // 若重置的是当前会话账户，清除会话并回退上下文
+  // 仅当重置的是当前会话账户时，才清会话并回退上下文
   if (sessionStorage.getItem(SESSION_ACCOUNT_KEY) === id) {
     sessionStorage.removeItem(SESSION_ACCOUNT_KEY);
     sessionStorage.removeItem(SESSION_USERNAME_KEY);
-    setCurrentAccountId(null);
+    syncBusinessAccount(undefined);
   }
   return { success: true };
 }
@@ -240,7 +148,7 @@ export async function isPasswordSet(): Promise<boolean> {
 export function isAuthenticated(): boolean {
   const id = sessionStorage.getItem(SESSION_ACCOUNT_KEY);
   if (id) {
-    setCurrentAccountId(id);
+    syncBusinessAccount(id);
     return true;
   }
   return false;
@@ -262,9 +170,10 @@ export function getSessionUsername(): string | null {
  * 清除 session 标志并重置账户上下文（后续业务操作回退到默认库）。
  */
 export function logout(): void {
+  void localAuthDriver.logout();
   sessionStorage.removeItem(SESSION_ACCOUNT_KEY);
   sessionStorage.removeItem(SESSION_USERNAME_KEY);
-  setCurrentAccountId(null);
+  syncBusinessAccount(undefined);
 }
 
 /**
@@ -279,5 +188,5 @@ export async function resetPassword(): Promise<void> {
   await deleteAllAccounts();
   sessionStorage.removeItem(SESSION_ACCOUNT_KEY);
   sessionStorage.removeItem(SESSION_USERNAME_KEY);
-  setCurrentAccountId(null);
+  syncBusinessAccount(undefined);
 }
