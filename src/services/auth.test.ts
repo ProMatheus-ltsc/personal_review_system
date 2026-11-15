@@ -95,7 +95,9 @@ describe('本地统一认证（shared-core）', () => {
     const driver = createDriver(memory);
 
     const created = await driver.register({ username: '新用户', password: 'pw123456' });
-    expect(created.id).toBe('新用户');
+    // 本地注册一步到位：status 为 created，用户信息在 user 上
+    expect(created.status).toBe('created');
+    expect(created.user?.id).toBe('新用户');
     expect(memory.accounts).toHaveLength(1);
     expect(memory.accounts[0].id).toBe('新用户');
   });
